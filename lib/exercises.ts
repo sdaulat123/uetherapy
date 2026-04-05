@@ -193,7 +193,7 @@ abstract class BaseExerciseEvaluator {
     this.stateMachine = stateConfig ? new ExerciseStateMachine(stateConfig) : null;
   }
 
-  protected updateState(primaryMetric: number, timestampMs: number) {
+  protected updateState(primaryMetric: number, timestampMs: number, stateMetric = primaryMetric) {
     const dtSeconds =
       this.previousTimestampMs === null ? 0 : (timestampMs - this.previousTimestampMs) / 1000;
     const velocity = dtSeconds > 0 ? (primaryMetric - this.previousValue) / dtSeconds : 0;
@@ -207,7 +207,7 @@ abstract class BaseExerciseEvaluator {
       return { state: "ACTIVE" as MovementState, velocity, repCompleted: false, stateChanged: false };
     }
 
-    const transition = this.stateMachine.update(primaryMetric, velocity, timestampMs);
+    const transition = this.stateMachine.update(stateMetric, velocity, timestampMs);
     if (transition.state === "ACTIVE" || transition.state === "HOLD") {
       this.repSamples.push({ timestampMs, value: primaryMetric, velocity });
     }
@@ -420,18 +420,20 @@ class TendonGlidingEvaluator extends BaseExerciseEvaluator {
 class PIPBlockingEvaluator extends BaseExerciseEvaluator {
   constructor() {
     super({
-      activeThreshold: 70,
-      restThreshold: 35,
+      activeThreshold: 60,
+      restThreshold: 18,
       velocityThreshold: 5,
-      minHoldMs: 50,
+      minHoldMs: 80,
       debounceFrames: 2
     });
   }
 
   process(frame: BiomechanicalFrame): FrameResult {
     const primary = frame.fingerAngles.index.pip;
-    const { state, velocity } = this.updateState(primary, frame.timestampMs);
     const otherAngles = [frame.fingerAngles.index.mcp, frame.fingerAngles.index.dip ?? 0];
+    const isolationScore = blockIsolationScore(primary, otherAngles);
+    const stateMetric = isolationScore >= 0.55 ? primary : 0;
+    const { state, velocity } = this.updateState(primary, frame.timestampMs, stateMetric);
     const warnings = otherAngles.some((value) => value > 18) ? ["Compensatory finger motion"] : [];
     this.registerWarnings(warnings);
     return {
@@ -441,7 +443,7 @@ class PIPBlockingEvaluator extends BaseExerciseEvaluator {
       primaryMetric: primary,
       displayMetrics: {
         pip_angle_deg: primary.toFixed(1),
-        isolation_score: blockIsolationScore(primary, otherAngles).toFixed(2),
+        isolation_score: isolationScore.toFixed(2),
         velocity_deg_s: velocity.toFixed(1)
       },
       warnings
@@ -452,18 +454,20 @@ class PIPBlockingEvaluator extends BaseExerciseEvaluator {
 class DIPBlockingEvaluator extends BaseExerciseEvaluator {
   constructor() {
     super({
-      activeThreshold: 55,
-      restThreshold: 25,
+      activeThreshold: 45,
+      restThreshold: 14,
       velocityThreshold: 4,
-      minHoldMs: 50,
+      minHoldMs: 80,
       debounceFrames: 2
     });
   }
 
   process(frame: BiomechanicalFrame): FrameResult {
     const primary = frame.fingerAngles.index.dip ?? 0;
-    const { state, velocity } = this.updateState(primary, frame.timestampMs);
     const otherAngles = [frame.fingerAngles.index.mcp, frame.fingerAngles.index.pip];
+    const isolationScore = blockIsolationScore(primary, otherAngles);
+    const stateMetric = isolationScore >= 0.55 ? primary : 0;
+    const { state, velocity } = this.updateState(primary, frame.timestampMs, stateMetric);
     const warnings = otherAngles.some((value) => value > 18) ? ["Compensatory finger motion"] : [];
     this.registerWarnings(warnings);
     return {
@@ -473,7 +477,7 @@ class DIPBlockingEvaluator extends BaseExerciseEvaluator {
       primaryMetric: primary,
       displayMetrics: {
         dip_angle_deg: primary.toFixed(1),
-        isolation_score: blockIsolationScore(primary, otherAngles).toFixed(2),
+        isolation_score: isolationScore.toFixed(2),
         velocity_deg_s: velocity.toFixed(1)
       },
       warnings
@@ -484,10 +488,10 @@ class DIPBlockingEvaluator extends BaseExerciseEvaluator {
 class FingerSpreadingEvaluator extends BaseExerciseEvaluator {
   constructor() {
     super({
-      activeThreshold: 145,
-      restThreshold: 115,
+      activeThreshold: 135,
+      restThreshold: 105,
       velocityThreshold: 8,
-      minHoldMs: 50,
+      minHoldMs: 80,
       debounceFrames: 2
     });
   }
@@ -522,8 +526,8 @@ class FingerSpreadingEvaluator extends BaseExerciseEvaluator {
 class CompositeFingerFlexionEvaluator extends BaseExerciseEvaluator {
   constructor() {
     super({
-      activeThreshold: 500,
-      restThreshold: 250,
+      activeThreshold: 560,
+      restThreshold: 280,
       velocityThreshold: 10,
       minHoldMs: 80,
       debounceFrames: 2
@@ -552,11 +556,11 @@ class ThumbOppositionEvaluator extends BaseExerciseEvaluator {
 
   constructor() {
     super({
-      activeThreshold: -28,
-      restThreshold: -42,
-      holdThreshold: -28,
-      velocityThreshold: 2,
-      minHoldMs: 120,
+      activeThreshold: -34,
+      restThreshold: -48,
+      holdThreshold: -30,
+      velocityThreshold: 1,
+      minHoldMs: 80,
       debounceFrames: 2,
       invertMetric: true
     });
@@ -600,8 +604,8 @@ class ThumbOppositionEvaluator extends BaseExerciseEvaluator {
 class ThumbAbductionEvaluator extends BaseExerciseEvaluator {
   constructor() {
     super({
-      activeThreshold: 105,
-      restThreshold: 75,
+      activeThreshold: 95,
+      restThreshold: 65,
       velocityThreshold: 5,
       minHoldMs: 60,
       debounceFrames: 2
@@ -630,10 +634,10 @@ class ThumbAbductionEvaluator extends BaseExerciseEvaluator {
 class WristFlexionEvaluator extends BaseExerciseEvaluator {
   constructor(invert = false) {
     super({
-      activeThreshold: 36,
-      restThreshold: 14,
-      holdThreshold: 44,
-      velocityThreshold: 6,
+      activeThreshold: 18,
+      restThreshold: 6,
+      holdThreshold: 24,
+      velocityThreshold: 3,
       minHoldMs: 150,
       debounceFrames: 3,
       invertMetric: invert
@@ -701,8 +705,8 @@ class WristExtensionEvaluator extends WristFlexionEvaluator {
 class RadialUlnarDeviationEvaluator extends BaseExerciseEvaluator {
   constructor() {
     super({
-      activeThreshold: 12,
-      restThreshold: 5,
+      activeThreshold: 10,
+      restThreshold: 4,
       velocityThreshold: 2,
       minHoldMs: 80,
       debounceFrames: 2
@@ -722,7 +726,8 @@ class RadialUlnarDeviationEvaluator extends BaseExerciseEvaluator {
       displayMetrics: {
         radial_deg: frame.radialDeviationDeg.toFixed(1),
         ulnar_deg: frame.ulnarDeviationDeg.toFixed(1),
-        movement_type: frame.movementType,
+        movement_type:
+          frame.radialDeviationDeg >= frame.ulnarDeviationDeg ? "radial" : "ulnar",
         velocity_deg_s: velocity.toFixed(1)
       },
       warnings
@@ -792,8 +797,8 @@ class WristCircumductionEvaluator extends BaseExerciseEvaluator {
 class PronationSupinationEvaluator extends BaseExerciseEvaluator {
   constructor() {
     super({
-      activeThreshold: 30,
-      restThreshold: 12,
+      activeThreshold: 18,
+      restThreshold: 6,
       velocityThreshold: 3,
       minHoldMs: 60,
       debounceFrames: 2
@@ -824,9 +829,9 @@ class PronationSupinationEvaluator extends BaseExerciseEvaluator {
 class GripStrengthEvaluator extends BaseExerciseEvaluator {
   constructor() {
     super({
-      activeThreshold: 70,
-      restThreshold: 35,
-      holdThreshold: 82,
+      activeThreshold: 75,
+      restThreshold: 30,
+      holdThreshold: 85,
       velocityThreshold: 4,
       minHoldMs: 150,
       debounceFrames: 2
@@ -835,10 +840,10 @@ class GripStrengthEvaluator extends BaseExerciseEvaluator {
 
   process(frame: BiomechanicalFrame): FrameResult {
     const primary = mean([
-      frame.fingerAngles.index.pip,
-      frame.fingerAngles.middle.pip,
-      frame.fingerAngles.ring.pip,
-      frame.fingerAngles.pinky.pip
+      frame.fingerAngles.index.pip + (frame.fingerAngles.index.dip ?? 0),
+      frame.fingerAngles.middle.pip + (frame.fingerAngles.middle.dip ?? 0),
+      frame.fingerAngles.ring.pip + (frame.fingerAngles.ring.dip ?? 0),
+      frame.fingerAngles.pinky.pip + (frame.fingerAngles.pinky.dip ?? 0)
     ]);
     const { state, velocity } = this.updateState(primary, frame.timestampMs);
     return {
@@ -847,7 +852,7 @@ class GripStrengthEvaluator extends BaseExerciseEvaluator {
       repCount: this.repCount,
       primaryMetric: primary,
       displayMetrics: {
-        closure_completeness: Math.min(primary / 90, 1).toFixed(2),
+        closure_completeness: Math.min(primary / 140, 1).toFixed(2),
         hold_quality: Math.max(0, 1 - Math.abs(velocity) / 120).toFixed(2),
         velocity_deg_s: velocity.toFixed(1)
       },
@@ -859,11 +864,11 @@ class GripStrengthEvaluator extends BaseExerciseEvaluator {
 class TipPinchEvaluator extends BaseExerciseEvaluator {
   constructor() {
     super({
-      activeThreshold: -26,
-      restThreshold: -44,
-      holdThreshold: -24,
-      velocityThreshold: 2,
-      minHoldMs: 120,
+      activeThreshold: -32,
+      restThreshold: -48,
+      holdThreshold: -28,
+      velocityThreshold: 1,
+      minHoldMs: 80,
       debounceFrames: 2,
       invertMetric: true
     });
@@ -891,8 +896,8 @@ class TipPinchEvaluator extends BaseExerciseEvaluator {
 class RubberBandExtensionEvaluator extends BaseExerciseEvaluator {
   constructor() {
     super({
-      activeThreshold: 150,
-      restThreshold: 115,
+      activeThreshold: 138,
+      restThreshold: 110,
       velocityThreshold: 6,
       minHoldMs: 80,
       debounceFrames: 2
@@ -920,11 +925,11 @@ class RubberBandExtensionEvaluator extends BaseExerciseEvaluator {
 class StaticStretchEvaluator extends BaseExerciseEvaluator {
   constructor(private readonly exerciseName: ExerciseName, private readonly metricForFrame: (frame: BiomechanicalFrame) => number) {
     super({
-      activeThreshold: 32,
-      restThreshold: 12,
-      holdThreshold: 36,
-      velocityThreshold: 1,
-      minHoldMs: 800,
+      activeThreshold: 14,
+      restThreshold: 6,
+      holdThreshold: 18,
+      velocityThreshold: 0.75,
+      minHoldMs: 1000,
       debounceFrames: 3
     });
   }

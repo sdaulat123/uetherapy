@@ -23,6 +23,7 @@ export const HAND_LANDMARK_NAMES = [
 ] as const;
 
 export type HandLandmarkName = (typeof HAND_LANDMARK_NAMES)[number];
+export type HandLabel = "Left" | "Right" | "Unknown";
 
 export type ExerciseName =
   | "tendon_gliding"
@@ -54,6 +55,7 @@ export type HandLandmarks = Record<HandLandmarkName, Point3D>;
 
 export interface TrackingFrame {
   timestampMs: number;
+  handedness: HandLabel;
   handLandmarks: HandLandmarks | null;
   handWorldLandmarks?: HandLandmarks | null;
   elbowPoint: Point3D | null;
@@ -70,6 +72,7 @@ export interface FingerAngles {
 
 export interface BiomechanicalFrame {
   timestampMs: number;
+  handedness: HandLabel;
   handLandmarks: HandLandmarks;
   handWorldLandmarks: HandLandmarks;
   elbowPoint: Point3D | null;
@@ -89,6 +92,7 @@ export interface BiomechanicalFrame {
 
 export interface FrameResult {
   exerciseName: ExerciseName;
+  handedness?: HandLabel;
   state: string;
   repCount: number;
   primaryMetric: number;
@@ -98,6 +102,7 @@ export interface FrameResult {
 
 export interface SessionSummary {
   exercise: ExerciseName;
+  handedness?: HandLabel;
   reps: number;
   max_angle: number;
   min_angle: number;

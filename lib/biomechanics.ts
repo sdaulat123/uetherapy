@@ -1,6 +1,7 @@
 import type {
   BiomechanicalFrame,
   FingerAngles,
+  HandLabel,
   HandLandmarks,
   Point3D,
   TrackingFrame
@@ -137,13 +138,19 @@ function buildHandFrame(worldLandmarks: HandLandmarks): HandFrame3D {
 export class WristKinematicsAnalyzer {
   private readonly neutralFramesRequired: number;
   private readonly smoothingWindow: number;
-  private neutralBuffer: HandFrame3D[] = [];
-  private neutralFrame: HandFrame3D | null = null;
-  private history = {
-    flexion: [] as number[],
-    extension: [] as number[],
-    radial: [] as number[],
-    ulnar: [] as number[]
+  private neutralBuffers: Record<HandLabel, HandFrame3D[]> = {
+    Left: [],
+    Right: [],
+    Unknown: []
+  };
+  private neutralFrames: Partial<Record<HandLabel, HandFrame3D>> = {};
+  private histories: Record<
+    HandLabel,
+    { flexion: number[]; extension: number[]; radial: number[]; ulnar: number[] }
+  > = {
+    Left: { flexion: [], extension: [], radial: [], ulnar: [] },
+    Right: { flexion: [], extension: [], radial: [], ulnar: [] },
+    Unknown: { flexion: [], extension: [], radial: [], ulnar: [] }
   };
 
   constructor(smoothingWindow = 7, neutralFramesRequired = 20) {
@@ -152,9 +159,13 @@ export class WristKinematicsAnalyzer {
   }
 
   reset() {
-    this.neutralBuffer = [];
-    this.neutralFrame = null;
-    this.history = { flexion: [], extension: [], radial: [], ulnar: [] };
+    this.neutralBuffers = { Left: [], Right: [], Unknown: [] };
+    this.neutralFrames = {};
+    this.histories = {
+      Left: { flexion: [], extension: [], radial: [], ulnar: [] },
+      Right: { flexion: [], extension: [], radial: [], ulnar: [] },
+      Unknown: { flexion: [], extension: [], radial: [], ulnar: [] }
+    };
   }
 
   private averageFrame(frames: HandFrame3D[]): HandFrame3D {
@@ -178,8 +189,12 @@ export class WristKinematicsAnalyzer {
     };
   }
 
-  private smooth(key: keyof WristKinematicsAnalyzer["history"], value: number) {
-    const samples = this.history[key];
+  private smooth(
+    handedness: HandLabel,
+    key: "flexion" | "extension" | "radial" | "ulnar",
+    value: number
+  ) {
+    const samples = this.histories[handedness][key];
     samples.push(value);
     if (samples.length > this.smoothingWindow) {
       samples.shift();
@@ -187,24 +202,25 @@ export class WristKinematicsAnalyzer {
     return mean(samples);
   }
 
-  measure(worldLandmarks: HandLandmarks): WristMetrics {
+  measure(handedness: HandLabel, worldLandmarks: HandLandmarks): WristMetrics {
     const liveFrame = buildHandFrame(worldLandmarks);
-    if (this.neutralFrame === null) {
-      if (this.neutralBuffer.length < this.neutralFramesRequired) {
-        this.neutralBuffer.push(liveFrame);
+    if (!this.neutralFrames[handedness]) {
+      if (this.neutralBuffers[handedness].length < this.neutralFramesRequired) {
+        this.neutralBuffers[handedness].push(liveFrame);
       }
-      if (this.neutralBuffer.length === this.neutralFramesRequired) {
-        this.neutralFrame = this.averageFrame(this.neutralBuffer);
+      if (this.neutralBuffers[handedness].length === this.neutralFramesRequired) {
+        this.neutralFrames[handedness] = this.averageFrame(this.neutralBuffers[handedness]);
       }
     }
 
-    const reference = this.neutralFrame;
+    const reference = this.neutralFrames[handedness] ?? null;
     let flexion = 0;
     let extension = 0;
     let radial = 0;
     let ulnar = 0;
 
     if (reference) {
+      const handednessSign = handedness === "Right" ? 1 : handedness === "Left" ? -1 : 1;
       const currentNormalSagittal = projectOntoPlane(liveFrame.handNormal, reference.lateralVec);
       const referenceNormalSagittal = projectOntoPlane(reference.handNormal, reference.lateralVec);
       const flexExtSigned = signedAngleAroundAxis(
@@ -219,7 +235,7 @@ export class WristKinematicsAnalyzer {
         referenceForearmCoronal,
         currentForearmCoronal,
         reference.handNormal
-      );
+      ) * handednessSign;
 
       flexion = Math.max(0, flexExtSigned);
       extension = Math.max(0, -flexExtSigned);
@@ -227,10 +243,10 @@ export class WristKinematicsAnalyzer {
       ulnar = Math.max(0, deviationSigned);
     }
 
-    const smoothedFlexion = this.smooth("flexion", flexion);
-    const smoothedExtension = this.smooth("extension", extension);
-    const smoothedRadial = this.smooth("radial", radial);
-    const smoothedUlnar = this.smooth("ulnar", ulnar);
+    const smoothedFlexion = this.smooth(handedness, "flexion", flexion);
+    const smoothedExtension = this.smooth(handedness, "extension", extension);
+    const smoothedRadial = this.smooth(handedness, "radial", radial);
+    const smoothedUlnar = this.smooth(handedness, "ulnar", ulnar);
 
     const movementCandidates = {
       flexion: smoothedFlexion,
@@ -335,7 +351,7 @@ export function computeBiomechanicalFrame(
   );
   const pronationSupinationDeg =
     (Math.atan2(palmNormal.x, palmNormal.z || 1e-6) * 180) / Math.PI;
-  const wristMetrics = wristAnalyzer?.measure(worldLandmarks) ?? {
+  const wristMetrics = wristAnalyzer?.measure(frame.handedness, worldLandmarks) ?? {
     flexion: 0,
     extension: 0,
     radial: 0,
@@ -362,6 +378,7 @@ export function computeBiomechanicalFrame(
 
   return {
     timestampMs: frame.timestampMs,
+    handedness: frame.handedness,
     handLandmarks: landmarks,
     handWorldLandmarks: worldLandmarks,
     elbowPoint: frame.elbowPoint,

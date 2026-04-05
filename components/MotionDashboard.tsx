@@ -18,6 +18,7 @@ import { createExerciseEvaluator, getExerciseOptions } from "@/lib/exercises";
 import type {
   ExerciseName,
   FrameResult,
+  HandLabel,
   SessionSummary,
   TrackingFrame
 } from "@/lib/types";
@@ -27,6 +28,17 @@ const EXERCISE_OPTIONS = getExerciseOptions();
 interface DetectorBundle {
   hand: HandLandmarker;
   pose: PoseLandmarker;
+}
+
+type HandResultMap = Partial<Record<HandLabel, FrameResult>>;
+type HandSummaryMap = Partial<Record<HandLabel, SessionSummary>>;
+
+function createEvaluatorMap(exercise: ExerciseName) {
+  return {
+    Left: createExerciseEvaluator(exercise),
+    Right: createExerciseEvaluator(exercise),
+    Unknown: createExerciseEvaluator(exercise)
+  };
 }
 
 function mirrorLandmarksForDisplay<T extends { x: number; y: number; z?: number }>(
@@ -42,7 +54,7 @@ export function MotionDashboard() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const detectorRef = useRef<DetectorBundle | null>(null);
-  const evaluatorRef = useRef(createExerciseEvaluator("wrist_flexion"));
+  const evaluatorRef = useRef(createEvaluatorMap("wrist_flexion"));
   const wristAnalyzerRef = useRef(new WristKinematicsAnalyzer());
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -51,8 +63,8 @@ export function MotionDashboard() {
   const [exercise, setExercise] = useState<ExerciseName>("wrist_flexion");
   const [status, setStatus] = useState("Initializing browser tracker...");
   const [isRunning, setIsRunning] = useState(false);
-  const [frameResult, setFrameResult] = useState<FrameResult | null>(null);
-  const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
+  const [frameResults, setFrameResults] = useState<HandResultMap>({});
+  const [sessionSummaries, setSessionSummaries] = useState<HandSummaryMap>({});
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,7 +81,7 @@ export function MotionDashboard() {
               "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
           },
           runningMode: "VIDEO",
-          numHands: 1
+          numHands: 2
         });
         const pose = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: {
@@ -119,10 +131,10 @@ export function MotionDashboard() {
   }, []);
 
   useEffect(() => {
-    evaluatorRef.current = createExerciseEvaluator(exercise);
+    evaluatorRef.current = createEvaluatorMap(exercise);
     wristAnalyzerRef.current.reset();
-    setFrameResult(null);
-    setSessionSummary(null);
+    setFrameResults({});
+    setSessionSummaries({});
     setStatus("Exercise switched. Neutral baseline recalibrating.");
   }, [exercise]);
 
@@ -157,65 +169,79 @@ export function MotionDashboard() {
       context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
       context.restore();
 
-      const handResult = detectors.hand.detectForVideo(video, timestampMs);
-      const poseResult = detectors.pose.detectForVideo(video, timestampMs);
-
-      let trackingFrame: TrackingFrame = {
-        timestampMs,
-        handLandmarks: null,
-        elbowPoint: null,
-        imageWidth: canvas.width,
-        imageHeight: canvas.height
-      };
-
-      if (handResult.landmarks.length > 0) {
-        const landmarks = handResult.landmarks[0];
-        const mirroredLandmarks = mirrorLandmarksForDisplay(landmarks);
-        trackingFrame = {
-          ...trackingFrame,
-          handLandmarks: normalizedLandmarksToPixels(landmarks, canvas.width, canvas.height),
-          handWorldLandmarks: handResult.worldLandmarks?.[0]
-            ? normalizedLandmarksToWorld(handResult.worldLandmarks[0])
-            : null
-        };
-        drawer.drawConnectors(mirroredLandmarks, HandLandmarker.HAND_CONNECTIONS, {
-          color: "#43d9b1",
-          lineWidth: 3
-        });
-        drawer.drawLandmarks(mirroredLandmarks, {
-          color: "#0b2f27",
-          fillColor: "#fdf4dc",
-          radius: 4
-        });
-      }
+        const handResult = detectors.hand.detectForVideo(video, timestampMs);
+        const poseResult = detectors.pose.detectForVideo(video, timestampMs);
 
       if (poseResult.landmarks.length > 0) {
         const elbow = poseResult.landmarks[0][14];
-        trackingFrame.elbowPoint = {
+        var elbowPoint = {
           x: elbow.x * canvas.width,
           y: elbow.y * canvas.height,
           z: elbow.z * canvas.width
         };
       }
 
-      const biomechanicalFrame = computeBiomechanicalFrame(
-        trackingFrame,
-        wristAnalyzerRef.current
-      );
-      if (biomechanicalFrame) {
-        const result = evaluatorRef.current.process(biomechanicalFrame);
-        const summary = evaluatorRef.current.buildSummary(exercise);
-        drawHud(context, result, summary);
+      const nextResults: HandResultMap = {};
+      const nextSummaries: HandSummaryMap = {};
+      const detectedHands = handResult.landmarks.length;
+      const elbowPointValue = typeof elbowPoint === "undefined" ? null : elbowPoint;
 
+      if (detectedHands > 0) {
+        handResult.landmarks.forEach((landmarks, index) => {
+          const handedness =
+            (handResult.handednesses?.[index]?.[0]?.categoryName as HandLabel | undefined) ??
+            "Unknown";
+          const mirroredLandmarks = mirrorLandmarksForDisplay(landmarks);
+          drawer.drawConnectors(mirroredLandmarks, HandLandmarker.HAND_CONNECTIONS, {
+            color: handedness === "Left" ? "#43d9b1" : "#ffbd73",
+            lineWidth: 3
+          });
+          drawer.drawLandmarks(mirroredLandmarks, {
+            color: "#0b2f27",
+            fillColor: handedness === "Left" ? "#fdf4dc" : "#e6f1ff",
+            radius: 4
+          });
+
+          const trackingFrame: TrackingFrame = {
+            timestampMs,
+            handedness,
+            handLandmarks: normalizedLandmarksToPixels(landmarks, canvas.width, canvas.height),
+            handWorldLandmarks: handResult.worldLandmarks?.[index]
+              ? normalizedLandmarksToWorld(handResult.worldLandmarks[index])
+              : null,
+            elbowPoint: elbowPointValue,
+            imageWidth: canvas.width,
+            imageHeight: canvas.height
+          };
+
+          const biomechanicalFrame = computeBiomechanicalFrame(
+            trackingFrame,
+            wristAnalyzerRef.current
+          );
+          if (!biomechanicalFrame) {
+            return;
+          }
+          const result = evaluatorRef.current[handedness].process(biomechanicalFrame);
+          const summary = evaluatorRef.current[handedness].buildSummary(exercise);
+          result.handedness = handedness;
+          summary.handedness = handedness;
+          nextResults[handedness] = result;
+          nextSummaries[handedness] = summary;
+        });
+
+        drawHud(context, nextResults, nextSummaries);
         if (timestampMs - lastHudUpdateRef.current > 80) {
           lastHudUpdateRef.current = timestampMs;
           startTransition(() => {
-            setFrameResult(result);
-            setSessionSummary(summary);
+            setFrameResults(nextResults);
+            setSessionSummaries(nextSummaries);
+            const neutralPending = Object.values(nextResults).some(
+              (result) => result?.displayMetrics?.neutral_ready === "no"
+            );
             setStatus(
-              biomechanicalFrame.neutralReady
-                ? "Tracking live."
-                : "Collecting neutral wrist baseline. Hold a comfortable neutral pose."
+              neutralPending
+                ? "Collecting neutral wrist baseline. Hold both hands comfortably."
+                : `Tracking live for ${detectedHands} hand${detectedHands > 1 ? "s" : ""}.`
             );
           });
         }
@@ -225,7 +251,7 @@ export function MotionDashboard() {
           lastHudUpdateRef.current = timestampMs;
           startTransition(() => {
             setStatus("Hand not visible. Center the working hand in frame.");
-            setFrameResult(null);
+            setFrameResults({});
           });
         }
       }
@@ -242,7 +268,13 @@ export function MotionDashboard() {
   }, [exercise, isRunning]);
 
   function exportSession() {
-    const summary = evaluatorRef.current.buildSummary(exercise);
+    const summary = {
+      exercise,
+      hands: {
+        Left: evaluatorRef.current.Left.buildSummary(exercise),
+        Right: evaluatorRef.current.Right.buildSummary(exercise)
+      }
+    };
     const blob = new Blob([JSON.stringify(summary, null, 2)], {
       type: "application/json"
     });
@@ -319,10 +351,10 @@ export function MotionDashboard() {
               <button
                 style={styles.secondaryButton}
                 onClick={() => {
-                  evaluatorRef.current = createExerciseEvaluator(exercise);
+                  evaluatorRef.current = createEvaluatorMap(exercise);
                   wristAnalyzerRef.current.reset();
-                  setFrameResult(null);
-                  setSessionSummary(null);
+                  setFrameResults({});
+                  setSessionSummaries({});
                   setStatus("Session reset. Neutral baseline recalibrating.");
                 }}
                 type="button"
@@ -335,56 +367,75 @@ export function MotionDashboard() {
           <section style={styles.metricsGrid}>
             <MetricCard
               label="Reps"
-              value={frameResult?.repCount ?? 0}
+              value={`${frameResults.Left?.repCount ?? 0} / ${frameResults.Right?.repCount ?? 0}`}
               accent="var(--accent)"
             />
             <MetricCard
-              label="State"
-              value={frameResult?.state ?? "WAITING"}
+              label="Hands"
+              value={Object.keys(frameResults).length || "WAITING"}
               accent="#d6885b"
             />
             <MetricCard
               label="Primary"
               value={
-                frameResult ? `${Number(frameResult.primaryMetric).toFixed(1)}` : "No signal"
+                frameResults.Left || frameResults.Right
+                  ? `L ${frameResults.Left ? Number(frameResults.Left.primaryMetric).toFixed(1) : "-"} | R ${frameResults.Right ? Number(frameResults.Right.primaryMetric).toFixed(1) : "-"}`
+                  : "No signal"
               }
               accent="#0f5a46"
             />
             <MetricCard
               label="ROM"
-              value={sessionSummary ? sessionSummary.rom.toFixed(1) : "0.0"}
+              value={
+                `L ${sessionSummaries.Left ? sessionSummaries.Left.rom.toFixed(1) : "0.0"} | R ${sessionSummaries.Right ? sessionSummaries.Right.rom.toFixed(1) : "0.0"}`
+              }
               accent="#5949a8"
             />
           </section>
 
           <section style={styles.panel}>
             <h2 style={styles.sectionTitle}>Live Metrics</h2>
-            <div style={styles.metricList}>
-              {frameResult
-                ? Object.entries(frameResult.displayMetrics).map(([key, value]) => (
-                    <div key={key} style={styles.metricRow}>
-                      <span style={styles.metricLabel}>{key.replaceAll("_", " ")}</span>
-                      <span style={styles.metricValue}>{String(value)}</span>
+            {Object.keys(frameResults).length ? (
+              <div style={styles.handPanels}>
+                {(["Left", "Right"] as HandLabel[]).map((hand) =>
+                  frameResults[hand] ? (
+                    <div key={hand} style={styles.handPanel}>
+                      <h3 style={styles.handPanelTitle}>
+                        {hand} Hand: {frameResults[hand]?.state}
+                      </h3>
+                      <div style={styles.metricList}>
+                        {Object.entries(frameResults[hand]!.displayMetrics).map(([key, value]) => (
+                          <div key={`${hand}-${key}`} style={styles.metricRow}>
+                            <span style={styles.metricLabel}>{key.replaceAll("_", " ")}</span>
+                            <span style={styles.metricValue}>{String(value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {frameResults[hand]!.warnings.length ? (
+                        <div style={styles.warningStack}>
+                          {frameResults[hand]!.warnings.map((warning) => (
+                            <div key={`${hand}-${warning}`} style={styles.warningCard}>
+                              {warning}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
-                  ))
-                : <p style={styles.sectionCopy}>Metrics appear once a hand is detected.</p>}
-            </div>
-            {frameResult?.warnings.length ? (
-              <div style={styles.warningStack}>
-                {frameResult.warnings.map((warning) => (
-                  <div key={warning} style={styles.warningCard}>
-                    {warning}
-                  </div>
-                ))}
+                  ) : null
+                )}
               </div>
-            ) : null}
+            ) : (
+              <div style={styles.metricList}>
+                <p style={styles.sectionCopy}>Metrics appear once a hand is detected.</p>
+              </div>
+            )}
           </section>
 
           <section style={styles.panel}>
             <h2 style={styles.sectionTitle}>Session Output</h2>
             <pre style={styles.jsonPreview}>
-              {sessionSummary
-                ? JSON.stringify(sessionSummary, null, 2)
+              {Object.keys(sessionSummaries).length
+                ? JSON.stringify({ exercise, hands: sessionSummaries }, null, 2)
                 : '{\n  "status": "waiting"\n}'}
             </pre>
           </section>
@@ -413,29 +464,33 @@ function MetricCard({
 
 function drawHud(
   context: CanvasRenderingContext2D,
-  result: FrameResult,
-  summary: SessionSummary
+  results: HandResultMap,
+  summaries: HandSummaryMap
 ) {
-  context.fillStyle = "rgba(17, 21, 18, 0.72)";
-  context.fillRect(20, 20, 310, 170);
-  context.fillStyle = "#f5efe3";
-  context.font = '600 18px var(--font-sans), sans-serif';
-  context.fillText(result.exerciseName.replaceAll("_", " "), 36, 50);
-  context.font = '400 14px var(--font-mono), monospace';
-  const lines = [
-    `State: ${result.state}`,
-    `Reps: ${result.repCount}`,
-    `Primary: ${result.primaryMetric.toFixed(1)}`,
-    `ROM: ${summary.rom.toFixed(1)}`,
-    `Avg velocity: ${summary.avg_velocity.toFixed(1)}`
-  ];
-  lines.forEach((line, index) => {
-    context.fillText(line, 36, 82 + index * 24);
+  (Object.entries(results) as Array<[HandLabel, FrameResult]>).forEach(([hand, result], panelIndex) => {
+    const summary = summaries[hand];
+    const left = 20 + panelIndex * 330;
+    context.fillStyle = "rgba(17, 21, 18, 0.72)";
+    context.fillRect(left, 20, 310, 170);
+    context.fillStyle = "#f5efe3";
+    context.font = '600 18px var(--font-sans), sans-serif';
+    context.fillText(`${hand} ${result.exerciseName.replaceAll("_", " ")}`, left + 16, 50);
+    context.font = '400 14px var(--font-mono), monospace';
+    const lines = [
+      `State: ${result.state}`,
+      `Reps: ${result.repCount}`,
+      `Primary: ${result.primaryMetric.toFixed(1)}`,
+      `ROM: ${summary ? summary.rom.toFixed(1) : "0.0"}`,
+      `Avg velocity: ${summary ? summary.avg_velocity.toFixed(1) : "0.0"}`
+    ];
+    lines.forEach((line, index) => {
+      context.fillText(line, left + 16, 82 + index * 24);
+    });
+    if (result.warnings.length > 0) {
+      context.fillStyle = "#ffb08f";
+      context.fillText(result.warnings[0], left + 16, 82 + lines.length * 24);
+    }
   });
-  if (result.warnings.length > 0) {
-    context.fillStyle = "#ffb08f";
-    context.fillText(result.warnings[0], 36, 82 + lines.length * 24);
-  }
 }
 
 function drawIdleHud(context: CanvasRenderingContext2D) {
@@ -443,7 +498,7 @@ function drawIdleHud(context: CanvasRenderingContext2D) {
   context.fillRect(20, 20, 340, 88);
   context.fillStyle = "#f5efe3";
   context.font = '600 16px var(--font-sans), sans-serif';
-  context.fillText("Place one hand inside the camera frame.", 32, 56);
+  context.fillText("Place one or both hands inside the camera frame.", 32, 56);
   context.font = '400 13px var(--font-mono), monospace';
   context.fillText("Lighting and contrast materially affect hand tracking.", 32, 82);
 }
@@ -657,6 +712,20 @@ const styles: Record<string, React.CSSProperties> = {
     display: "grid",
     gap: 10,
     marginTop: 14
+  },
+  handPanels: {
+    display: "grid",
+    gap: 14
+  },
+  handPanel: {
+    borderRadius: 18,
+    border: "1px solid var(--line)",
+    padding: 14,
+    background: "rgba(255,255,255,0.35)"
+  },
+  handPanelTitle: {
+    margin: "0 0 12px",
+    fontSize: 16
   },
   warningCard: {
     borderRadius: 18,
