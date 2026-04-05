@@ -650,21 +650,27 @@ class WristFlexionEvaluator extends BaseExerciseEvaluator {
   }
 
   process(frame: BiomechanicalFrame): FrameResult {
-    const { state, velocity } = this.updateState(frame.wristAngleDeg, frame.timestampMs);
+    const primaryMetric = invertMetricFromFrame(frame, false);
+    const { state, velocity } = this.updateState(primaryMetric, frame.timestampMs);
     const warnings = this.buildWarnings(frame);
     return {
       exerciseName: "wrist_flexion",
       state,
       repCount: this.repCount,
-      primaryMetric: frame.wristAngleDeg,
+      primaryMetric: primaryMetric,
       displayMetrics: {
-        wrist_angle_deg: frame.wristAngleDeg.toFixed(1),
+        wrist_flexion_deg: frame.wristFlexionDeg.toFixed(1),
         velocity_deg_s: velocity.toFixed(1),
-        deviation_deg: frame.radialUlnarDeviationDeg.toFixed(1)
+        neutral_ready: frame.neutralReady ? "yes" : "no",
+        movement_type: frame.movementType
       },
       warnings
     };
   }
+}
+
+function invertMetricFromFrame(frame: BiomechanicalFrame, extension: boolean) {
+  return extension ? frame.wristExtensionDeg : frame.wristFlexionDeg;
 }
 
 class WristExtensionEvaluator extends WristFlexionEvaluator {
@@ -673,7 +679,7 @@ class WristExtensionEvaluator extends WristFlexionEvaluator {
   }
 
   override process(frame: BiomechanicalFrame): FrameResult {
-    const extensionMetric = Math.max(0, 180 - frame.wristAngleDeg);
+    const extensionMetric = invertMetricFromFrame(frame, true);
     const { state, velocity } = this.updateState(extensionMetric, frame.timestampMs);
     const warnings = this.buildWarnings(frame);
     return {
@@ -684,7 +690,8 @@ class WristExtensionEvaluator extends WristFlexionEvaluator {
       displayMetrics: {
         wrist_extension_deg: extensionMetric.toFixed(1),
         velocity_deg_s: velocity.toFixed(1),
-        deviation_deg: frame.radialUlnarDeviationDeg.toFixed(1)
+        neutral_ready: frame.neutralReady ? "yes" : "no",
+        movement_type: frame.movementType
       },
       warnings
     };
@@ -703,9 +710,9 @@ class RadialUlnarDeviationEvaluator extends BaseExerciseEvaluator {
   }
 
   process(frame: BiomechanicalFrame): FrameResult {
-    const primary = frame.radialUlnarDeviationDeg;
+    const primary = Math.max(frame.radialDeviationDeg, frame.ulnarDeviationDeg);
     const { state, velocity } = this.updateState(Math.abs(primary), frame.timestampMs);
-    const warnings = Math.abs(frame.wristAngleDeg) > 85 ? ["Excess elbow movement"] : [];
+    const warnings = Math.max(frame.wristFlexionDeg, frame.wristExtensionDeg) > 35 ? ["Excess elbow movement"] : [];
     this.registerWarnings(warnings);
     return {
       exerciseName: "radial_ulnar_deviation",
@@ -713,8 +720,9 @@ class RadialUlnarDeviationEvaluator extends BaseExerciseEvaluator {
       repCount: this.repCount,
       primaryMetric: primary,
       displayMetrics: {
-        deviation_deg: primary.toFixed(1),
-        asymmetry_score: Math.abs(primary).toFixed(1),
+        radial_deg: frame.radialDeviationDeg.toFixed(1),
+        ulnar_deg: frame.ulnarDeviationDeg.toFixed(1),
+        movement_type: frame.movementType,
         velocity_deg_s: velocity.toFixed(1)
       },
       warnings
@@ -795,7 +803,7 @@ class PronationSupinationEvaluator extends BaseExerciseEvaluator {
   process(frame: BiomechanicalFrame): FrameResult {
     const primary = frame.pronationSupinationDeg;
     const { state, velocity } = this.updateState(Math.abs(primary), frame.timestampMs);
-    const warnings = Math.abs(frame.radialUlnarDeviationDeg) > 25 ? ["Excess elbow movement"] : [];
+    const warnings = Math.max(frame.radialDeviationDeg, frame.ulnarDeviationDeg) > 20 ? ["Excess elbow movement"] : [];
     this.registerWarnings(warnings);
     const control = Math.max(0, 1 - Math.abs(velocity) / 180);
     return {
@@ -973,16 +981,16 @@ export function createExerciseEvaluator(name: ExerciseName) {
     case "rubber_band_extension":
       return new RubberBandExtensionEvaluator();
     case "wrist_flexion_stretch":
-      return new StaticStretchEvaluator("wrist_flexion_stretch", (frame) => frame.wristAngleDeg);
+      return new StaticStretchEvaluator("wrist_flexion_stretch", (frame) => frame.wristFlexionDeg);
     case "wrist_extension_stretch":
       return new StaticStretchEvaluator(
         "wrist_extension_stretch",
-        (frame) => Math.max(0, 180 - frame.wristAngleDeg)
+        (frame) => frame.wristExtensionDeg
       );
     case "prayer_stretch":
       return new StaticStretchEvaluator(
         "prayer_stretch",
-        (frame) => Math.abs(frame.wristAngleDeg) + Math.abs(frame.radialUlnarDeviationDeg) * 0.5
+        (frame) => Math.max(frame.wristExtensionDeg, frame.wristFlexionDeg) + Math.max(frame.radialDeviationDeg, frame.ulnarDeviationDeg) * 0.5
       );
     case "wrist_flexion":
     default:

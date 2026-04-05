@@ -55,6 +55,7 @@ export type HandLandmarks = Record<HandLandmarkName, Point3D>;
 export interface TrackingFrame {
   timestampMs: number;
   handLandmarks: HandLandmarks | null;
+  handWorldLandmarks?: HandLandmarks | null;
   elbowPoint: Point3D | null;
   imageWidth: number;
   imageHeight: number;
@@ -70,10 +71,17 @@ export interface FingerAngles {
 export interface BiomechanicalFrame {
   timestampMs: number;
   handLandmarks: HandLandmarks;
+  handWorldLandmarks: HandLandmarks;
   elbowPoint: Point3D | null;
   wristAngleDeg: number;
   radialUlnarDeviationDeg: number;
   pronationSupinationDeg: number;
+  wristFlexionDeg: number;
+  wristExtensionDeg: number;
+  radialDeviationDeg: number;
+  ulnarDeviationDeg: number;
+  movementType: string;
+  neutralReady: boolean;
   fingerSpreadPx: number;
   thumbDistancesPx: Record<"index" | "middle" | "ring" | "pinky", number>;
   fingerAngles: Record<"index" | "middle" | "ring" | "pinky" | "thumb", FingerAngles>;

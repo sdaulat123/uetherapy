@@ -6,6 +6,25 @@ import type {
   TrackingFrame
 } from "@/lib/types";
 
+interface HandFrame3D {
+  wrist: Point3D;
+  forearmVec: Point3D;
+  handVec: Point3D;
+  lateralVec: Point3D;
+  handNormal: Point3D;
+}
+
+interface WristMetrics {
+  flexion: number;
+  extension: number;
+  radial: number;
+  ulnar: number;
+  flexionExtensionDeg: number;
+  radialUlnarDeg: number;
+  movementType: string;
+  neutralReady: boolean;
+}
+
 function vector(a: Point3D, b: Point3D) {
   return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
 }
@@ -46,11 +65,192 @@ function normalize(point: Point3D): Point3D {
   return { x: point.x / norm, y: point.y / norm, z: point.z / norm };
 }
 
+function projectOntoPlane(vectorToProject: Point3D, planeNormal: Point3D): Point3D {
+  const normal = normalize(planeNormal);
+  const scale =
+    vectorToProject.x * normal.x + vectorToProject.y * normal.y + vectorToProject.z * normal.z;
+  return {
+    x: vectorToProject.x - normal.x * scale,
+    y: vectorToProject.y - normal.y * scale,
+    z: vectorToProject.z - normal.z * scale
+  };
+}
+
+function signedAngleAroundAxis(fromVector: Point3D, toVector: Point3D, axisVector: Point3D) {
+  const axis = normalize(axisVector);
+  const fromProjected = projectOntoPlane(fromVector, axis);
+  const toProjected = projectOntoPlane(toVector, axis);
+  const fromNorm = normalize(fromProjected);
+  const toNorm = normalize(toProjected);
+  if (magnitude(fromNorm) === 0 || magnitude(toNorm) === 0 || magnitude(axis) === 0) {
+    return 0;
+  }
+  const crossValue = cross(fromNorm, toNorm);
+  const sine = crossValue.x * axis.x + crossValue.y * axis.y + crossValue.z * axis.z;
+  const cosine = Math.max(
+    -1,
+    Math.min(1, fromNorm.x * toNorm.x + fromNorm.y * toNorm.y + fromNorm.z * toNorm.z)
+  );
+  return (Math.atan2(sine, cosine) * 180) / Math.PI;
+}
+
 function mean(values: number[]) {
   if (values.length === 0) {
     return 0;
   }
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function buildHandFrame(worldLandmarks: HandLandmarks): HandFrame3D {
+  const wrist = worldLandmarks.wrist;
+  const middleMcp = worldLandmarks.middle_mcp;
+  const indexMcp = worldLandmarks.index_mcp;
+  const pinkyMcp = worldLandmarks.pinky_mcp;
+  const forearmVec = normalize({
+    x: middleMcp.x - wrist.x,
+    y: middleMcp.y - wrist.y,
+    z: middleMcp.z - wrist.z
+  });
+  const handVec = normalize({
+    x: middleMcp.x - wrist.x,
+    y: middleMcp.y - wrist.y,
+    z: middleMcp.z - wrist.z
+  });
+  const lateralVec = normalize({
+    x: indexMcp.x - pinkyMcp.x,
+    y: indexMcp.y - pinkyMcp.y,
+    z: indexMcp.z - pinkyMcp.z
+  });
+  let handNormal = normalize(cross(lateralVec, forearmVec));
+  if (magnitude(handNormal) === 0) {
+    handNormal = { x: 0, y: 0, z: 1 };
+  }
+  return {
+    wrist,
+    forearmVec,
+    handVec,
+    lateralVec,
+    handNormal
+  };
+}
+
+export class WristKinematicsAnalyzer {
+  private readonly neutralFramesRequired: number;
+  private readonly smoothingWindow: number;
+  private neutralBuffer: HandFrame3D[] = [];
+  private neutralFrame: HandFrame3D | null = null;
+  private history = {
+    flexion: [] as number[],
+    extension: [] as number[],
+    radial: [] as number[],
+    ulnar: [] as number[]
+  };
+
+  constructor(smoothingWindow = 7, neutralFramesRequired = 20) {
+    this.smoothingWindow = smoothingWindow;
+    this.neutralFramesRequired = neutralFramesRequired;
+  }
+
+  reset() {
+    this.neutralBuffer = [];
+    this.neutralFrame = null;
+    this.history = { flexion: [], extension: [], radial: [], ulnar: [] };
+  }
+
+  private averageFrame(frames: HandFrame3D[]): HandFrame3D {
+    const averagePoint = (selector: (frame: HandFrame3D) => Point3D): Point3D =>
+      normalize({
+        x: mean(frames.map((frame) => selector(frame).x)),
+        y: mean(frames.map((frame) => selector(frame).y)),
+        z: mean(frames.map((frame) => selector(frame).z))
+      });
+
+    return {
+      wrist: {
+        x: mean(frames.map((frame) => frame.wrist.x)),
+        y: mean(frames.map((frame) => frame.wrist.y)),
+        z: mean(frames.map((frame) => frame.wrist.z))
+      },
+      forearmVec: averagePoint((frame) => frame.forearmVec),
+      handVec: averagePoint((frame) => frame.handVec),
+      lateralVec: averagePoint((frame) => frame.lateralVec),
+      handNormal: averagePoint((frame) => frame.handNormal)
+    };
+  }
+
+  private smooth(key: keyof WristKinematicsAnalyzer["history"], value: number) {
+    const samples = this.history[key];
+    samples.push(value);
+    if (samples.length > this.smoothingWindow) {
+      samples.shift();
+    }
+    return mean(samples);
+  }
+
+  measure(worldLandmarks: HandLandmarks): WristMetrics {
+    const liveFrame = buildHandFrame(worldLandmarks);
+    if (this.neutralFrame === null) {
+      if (this.neutralBuffer.length < this.neutralFramesRequired) {
+        this.neutralBuffer.push(liveFrame);
+      }
+      if (this.neutralBuffer.length === this.neutralFramesRequired) {
+        this.neutralFrame = this.averageFrame(this.neutralBuffer);
+      }
+    }
+
+    const reference = this.neutralFrame;
+    let flexion = 0;
+    let extension = 0;
+    let radial = 0;
+    let ulnar = 0;
+
+    if (reference) {
+      const currentNormalSagittal = projectOntoPlane(liveFrame.handNormal, reference.lateralVec);
+      const referenceNormalSagittal = projectOntoPlane(reference.handNormal, reference.lateralVec);
+      const flexExtSigned = signedAngleAroundAxis(
+        referenceNormalSagittal,
+        currentNormalSagittal,
+        reference.lateralVec
+      );
+
+      const currentForearmCoronal = projectOntoPlane(liveFrame.forearmVec, reference.handNormal);
+      const referenceForearmCoronal = projectOntoPlane(reference.forearmVec, reference.handNormal);
+      const deviationSigned = signedAngleAroundAxis(
+        referenceForearmCoronal,
+        currentForearmCoronal,
+        reference.handNormal
+      );
+
+      flexion = Math.max(0, flexExtSigned);
+      extension = Math.max(0, -flexExtSigned);
+      radial = Math.max(0, -deviationSigned);
+      ulnar = Math.max(0, deviationSigned);
+    }
+
+    const smoothedFlexion = this.smooth("flexion", flexion);
+    const smoothedExtension = this.smooth("extension", extension);
+    const smoothedRadial = this.smooth("radial", radial);
+    const smoothedUlnar = this.smooth("ulnar", ulnar);
+
+    const movementCandidates = {
+      flexion: smoothedFlexion,
+      extension: smoothedExtension,
+      radial: smoothedRadial,
+      ulnar: smoothedUlnar
+    };
+    const [movementType, peak] = Object.entries(movementCandidates).sort((a, b) => b[1] - a[1])[0];
+
+    return {
+      flexion: smoothedFlexion,
+      extension: smoothedExtension,
+      radial: smoothedRadial,
+      ulnar: smoothedUlnar,
+      flexionExtensionDeg: Math.max(smoothedFlexion, smoothedExtension),
+      radialUlnarDeg: Math.max(smoothedRadial, smoothedUlnar),
+      movementType: peak >= 6 ? movementType : "neutral",
+      neutralReady: reference !== null
+    };
+  }
 }
 
 export function computeFingerAngles(landmarks: HandLandmarks): BiomechanicalFrame["fingerAngles"] {
@@ -84,12 +284,16 @@ export function computeFingerAngles(landmarks: HandLandmarks): BiomechanicalFram
   };
 }
 
-export function computeBiomechanicalFrame(frame: TrackingFrame): BiomechanicalFrame | null {
+export function computeBiomechanicalFrame(
+  frame: TrackingFrame,
+  wristAnalyzer?: WristKinematicsAnalyzer
+): BiomechanicalFrame | null {
   if (!frame.handLandmarks) {
     return null;
   }
 
   const landmarks = frame.handLandmarks;
+  const worldLandmarks = frame.handWorldLandmarks ?? frame.handLandmarks;
   const elbowPoint =
     frame.elbowPoint ??
     ({
@@ -125,20 +329,22 @@ export function computeBiomechanicalFrame(frame: TrackingFrame): BiomechanicalFr
 
   const palmNormal = normalize(
     cross(
-      {
-        x: landmarks.index_mcp.x - landmarks.wrist.x,
-        y: landmarks.index_mcp.y - landmarks.wrist.y,
-        z: landmarks.index_mcp.z - landmarks.wrist.z
-      },
-      {
-        x: landmarks.pinky_mcp.x - landmarks.wrist.x,
-        y: landmarks.pinky_mcp.y - landmarks.wrist.y,
-        z: landmarks.pinky_mcp.z - landmarks.wrist.z
-      }
+      vector(landmarks.index_mcp, landmarks.wrist),
+      vector(landmarks.pinky_mcp, landmarks.wrist)
     )
   );
   const pronationSupinationDeg =
     (Math.atan2(palmNormal.x, palmNormal.z || 1e-6) * 180) / Math.PI;
+  const wristMetrics = wristAnalyzer?.measure(worldLandmarks) ?? {
+    flexion: 0,
+    extension: 0,
+    radial: 0,
+    ulnar: 0,
+    flexionExtensionDeg: wristAngleDeg,
+    radialUlnarDeg: Math.abs(radialUlnarDeviationDeg),
+    movementType: "neutral",
+    neutralReady: false
+  };
 
   const fingertips = [
     landmarks.thumb_tip,
@@ -157,10 +363,17 @@ export function computeBiomechanicalFrame(frame: TrackingFrame): BiomechanicalFr
   return {
     timestampMs: frame.timestampMs,
     handLandmarks: landmarks,
+    handWorldLandmarks: worldLandmarks,
     elbowPoint: frame.elbowPoint,
     wristAngleDeg,
     radialUlnarDeviationDeg,
     pronationSupinationDeg,
+    wristFlexionDeg: wristMetrics.flexion,
+    wristExtensionDeg: wristMetrics.extension,
+    radialDeviationDeg: wristMetrics.radial,
+    ulnarDeviationDeg: wristMetrics.ulnar,
+    movementType: wristMetrics.movementType,
+    neutralReady: wristMetrics.neutralReady,
     fingerSpreadPx: mean(distances),
     thumbDistancesPx: {
       index: distance(landmarks.thumb_tip, landmarks.index_tip),
@@ -199,5 +412,33 @@ export function normalizedLandmarksToPixels(
     pinky_pip: { x: landmarks[18].x * width, y: landmarks[18].y * height, z: landmarks[18].z * width },
     pinky_dip: { x: landmarks[19].x * width, y: landmarks[19].y * height, z: landmarks[19].z * width },
     pinky_tip: { x: landmarks[20].x * width, y: landmarks[20].y * height, z: landmarks[20].z * width }
+  };
+}
+
+export function normalizedLandmarksToWorld(
+  landmarks: Array<{ x: number; y: number; z: number }>
+): HandLandmarks {
+  return {
+    wrist: { x: landmarks[0].x, y: landmarks[0].y, z: landmarks[0].z },
+    thumb_cmc: { x: landmarks[1].x, y: landmarks[1].y, z: landmarks[1].z },
+    thumb_mcp: { x: landmarks[2].x, y: landmarks[2].y, z: landmarks[2].z },
+    thumb_ip: { x: landmarks[3].x, y: landmarks[3].y, z: landmarks[3].z },
+    thumb_tip: { x: landmarks[4].x, y: landmarks[4].y, z: landmarks[4].z },
+    index_mcp: { x: landmarks[5].x, y: landmarks[5].y, z: landmarks[5].z },
+    index_pip: { x: landmarks[6].x, y: landmarks[6].y, z: landmarks[6].z },
+    index_dip: { x: landmarks[7].x, y: landmarks[7].y, z: landmarks[7].z },
+    index_tip: { x: landmarks[8].x, y: landmarks[8].y, z: landmarks[8].z },
+    middle_mcp: { x: landmarks[9].x, y: landmarks[9].y, z: landmarks[9].z },
+    middle_pip: { x: landmarks[10].x, y: landmarks[10].y, z: landmarks[10].z },
+    middle_dip: { x: landmarks[11].x, y: landmarks[11].y, z: landmarks[11].z },
+    middle_tip: { x: landmarks[12].x, y: landmarks[12].y, z: landmarks[12].z },
+    ring_mcp: { x: landmarks[13].x, y: landmarks[13].y, z: landmarks[13].z },
+    ring_pip: { x: landmarks[14].x, y: landmarks[14].y, z: landmarks[14].z },
+    ring_dip: { x: landmarks[15].x, y: landmarks[15].y, z: landmarks[15].z },
+    ring_tip: { x: landmarks[16].x, y: landmarks[16].y, z: landmarks[16].z },
+    pinky_mcp: { x: landmarks[17].x, y: landmarks[17].y, z: landmarks[17].z },
+    pinky_pip: { x: landmarks[18].x, y: landmarks[18].y, z: landmarks[18].z },
+    pinky_dip: { x: landmarks[19].x, y: landmarks[19].y, z: landmarks[19].z },
+    pinky_tip: { x: landmarks[20].x, y: landmarks[20].y, z: landmarks[20].z }
   };
 }

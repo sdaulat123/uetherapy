@@ -8,7 +8,12 @@ import {
   PoseLandmarker
 } from "@mediapipe/tasks-vision";
 
-import { computeBiomechanicalFrame, normalizedLandmarksToPixels } from "@/lib/biomechanics";
+import {
+  computeBiomechanicalFrame,
+  normalizedLandmarksToPixels,
+  normalizedLandmarksToWorld,
+  WristKinematicsAnalyzer
+} from "@/lib/biomechanics";
 import { createExerciseEvaluator, getExerciseOptions } from "@/lib/exercises";
 import type {
   ExerciseName,
@@ -29,6 +34,7 @@ export function MotionDashboard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const detectorRef = useRef<DetectorBundle | null>(null);
   const evaluatorRef = useRef(createExerciseEvaluator("wrist_flexion"));
+  const wristAnalyzerRef = useRef(new WristKinematicsAnalyzer());
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastHudUpdateRef = useRef(0);
@@ -105,9 +111,10 @@ export function MotionDashboard() {
 
   useEffect(() => {
     evaluatorRef.current = createExerciseEvaluator(exercise);
+    wristAnalyzerRef.current.reset();
     setFrameResult(null);
     setSessionSummary(null);
-    setStatus("Exercise switched. Session counters reset.");
+    setStatus("Exercise switched. Neutral baseline recalibrating.");
   }, [exercise]);
 
   useEffect(() => {
@@ -156,7 +163,10 @@ export function MotionDashboard() {
         const landmarks = handResult.landmarks[0];
         trackingFrame = {
           ...trackingFrame,
-          handLandmarks: normalizedLandmarksToPixels(landmarks, canvas.width, canvas.height)
+          handLandmarks: normalizedLandmarksToPixels(landmarks, canvas.width, canvas.height),
+          handWorldLandmarks: handResult.worldLandmarks?.[0]
+            ? normalizedLandmarksToWorld(handResult.worldLandmarks[0])
+            : null
         };
         drawer.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
           color: "#43d9b1",
@@ -178,7 +188,10 @@ export function MotionDashboard() {
         };
       }
 
-      const biomechanicalFrame = computeBiomechanicalFrame(trackingFrame);
+      const biomechanicalFrame = computeBiomechanicalFrame(
+        trackingFrame,
+        wristAnalyzerRef.current
+      );
       if (biomechanicalFrame) {
         const result = evaluatorRef.current.process(biomechanicalFrame);
         const summary = evaluatorRef.current.buildSummary(exercise);
@@ -189,7 +202,11 @@ export function MotionDashboard() {
           startTransition(() => {
             setFrameResult(result);
             setSessionSummary(summary);
-            setStatus("Tracking live.");
+            setStatus(
+              biomechanicalFrame.neutralReady
+                ? "Tracking live."
+                : "Collecting neutral wrist baseline. Hold a comfortable neutral pose."
+            );
           });
         }
       } else {
@@ -293,9 +310,10 @@ export function MotionDashboard() {
                 style={styles.secondaryButton}
                 onClick={() => {
                   evaluatorRef.current = createExerciseEvaluator(exercise);
+                  wristAnalyzerRef.current.reset();
                   setFrameResult(null);
                   setSessionSummary(null);
-                  setStatus("Session reset.");
+                  setStatus("Session reset. Neutral baseline recalibrating.");
                 }}
                 type="button"
               >
