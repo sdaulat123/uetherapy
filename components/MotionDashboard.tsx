@@ -29,6 +29,15 @@ interface DetectorBundle {
   pose: PoseLandmarker;
 }
 
+function mirrorLandmarksForDisplay<T extends { x: number; y: number; z?: number }>(
+  landmarks: T[]
+) {
+  return landmarks.map((landmark) => ({
+    ...landmark,
+    x: 1 - landmark.x
+  }));
+}
+
 export function MotionDashboard() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -161,6 +170,7 @@ export function MotionDashboard() {
 
       if (handResult.landmarks.length > 0) {
         const landmarks = handResult.landmarks[0];
+        const mirroredLandmarks = mirrorLandmarksForDisplay(landmarks);
         trackingFrame = {
           ...trackingFrame,
           handLandmarks: normalizedLandmarksToPixels(landmarks, canvas.width, canvas.height),
@@ -168,11 +178,11 @@ export function MotionDashboard() {
             ? normalizedLandmarksToWorld(handResult.worldLandmarks[0])
             : null
         };
-        drawer.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
+        drawer.drawConnectors(mirroredLandmarks, HandLandmarker.HAND_CONNECTIONS, {
           color: "#43d9b1",
           lineWidth: 3
         });
-        drawer.drawLandmarks(landmarks, {
+        drawer.drawLandmarks(mirroredLandmarks, {
           color: "#0b2f27",
           fillColor: "#fdf4dc",
           radius: 4
