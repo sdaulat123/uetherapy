@@ -25,8 +25,24 @@ export const HAND_LANDMARK_NAMES = [
 export type HandLandmarkName = (typeof HAND_LANDMARK_NAMES)[number];
 
 export type ExerciseName =
+  | "tendon_gliding"
+  | "pip_blocking"
+  | "dip_blocking"
+  | "finger_spreading"
+  | "composite_finger_flexion"
   | "wrist_flexion"
-  | "thumb_opposition";
+  | "thumb_opposition"
+  | "thumb_abduction"
+  | "wrist_extension"
+  | "radial_ulnar_deviation"
+  | "wrist_circumduction"
+  | "pronation_supination"
+  | "grip_strength"
+  | "tip_pinch"
+  | "rubber_band_extension"
+  | "wrist_flexion_stretch"
+  | "wrist_extension_stretch"
+  | "prayer_stretch";
 
 export interface Point3D {
   x: number;
@@ -53,6 +69,8 @@ export interface FingerAngles {
 
 export interface BiomechanicalFrame {
   timestampMs: number;
+  handLandmarks: HandLandmarks;
+  elbowPoint: Point3D | null;
   wristAngleDeg: number;
   radialUlnarDeviationDeg: number;
   pronationSupinationDeg: number;

@@ -9,46 +9,15 @@ import {
 } from "@mediapipe/tasks-vision";
 
 import { computeBiomechanicalFrame, normalizedLandmarksToPixels } from "@/lib/biomechanics";
-import { createExerciseEvaluator } from "@/lib/exercises";
+import { createExerciseEvaluator, getExerciseOptions } from "@/lib/exercises";
 import type {
   ExerciseName,
-  ExerciseOption,
   FrameResult,
   SessionSummary,
   TrackingFrame
 } from "@/lib/types";
 
-const EXERCISE_OPTIONS: ExerciseOption[] = [
-  {
-    id: "wrist_flexion",
-    label: "Wrist Flexion",
-    description: "Realtime wrist angle tracking with repetition gating and compensation monitoring."
-  },
-  {
-    id: "thumb_opposition",
-    label: "Thumb Opposition",
-    description: "Thumb-to-finger contact detection with precision and success-rate metrics."
-  }
-];
-
-const SECONDARY_EXERCISES = [
-  "Tendon gliding",
-  "PIP blocking",
-  "DIP blocking",
-  "Finger spreading",
-  "Composite finger flexion",
-  "Thumb abduction",
-  "Wrist extension",
-  "Radial/Ulnar deviation",
-  "Wrist circumduction",
-  "Pronation/Supination",
-  "Grip",
-  "Tip pinch",
-  "Rubber band extension",
-  "Wrist flexion stretch",
-  "Wrist extension stretch",
-  "Prayer stretch"
-];
+const EXERCISE_OPTIONS = getExerciseOptions();
 
 interface DetectorBundle {
   hand: HandLandmarker;
@@ -295,8 +264,8 @@ export function MotionDashboard() {
           <section style={styles.panel}>
             <h2 style={styles.sectionTitle}>Exercise Mode</h2>
             <p style={styles.sectionCopy}>
-              Two exercises are fully ported for browser use now. The rest remain available in the
-              Python core and can be migrated next.
+              All requested rehabilitation exercises are available in the browser runtime through a
+              shared biomechanics and state-machine layer.
             </p>
             <label style={styles.fieldLabel} htmlFor="exercise-select">
               Active exercise
@@ -386,19 +355,10 @@ export function MotionDashboard() {
           <section style={styles.panel}>
             <h2 style={styles.sectionTitle}>Session Output</h2>
             <pre style={styles.jsonPreview}>
-              {JSON.stringify(sessionSummary, null, 2) ?? "{\n  \"status\": \"waiting\"\n}"}
+              {sessionSummary
+                ? JSON.stringify(sessionSummary, null, 2)
+                : '{\n  "status": "waiting"\n}'}
             </pre>
-          </section>
-
-          <section style={styles.panel}>
-            <h2 style={styles.sectionTitle}>Remaining Python-Core Exercises</h2>
-            <div style={styles.tagCloud}>
-              {SECONDARY_EXERCISES.map((exerciseName) => (
-                <span key={exerciseName} style={styles.tag}>
-                  {exerciseName}
-                </span>
-              ))}
-            </div>
           </section>
         </aside>
       </section>
@@ -686,18 +646,4 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     overflowX: "auto"
   },
-  tagCloud: {
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-    marginTop: 14
-  },
-  tag: {
-    borderRadius: 999,
-    padding: "10px 14px",
-    background: "rgba(15, 90, 70, 0.08)",
-    border: "1px solid rgba(15, 90, 70, 0.12)",
-    color: "var(--accent-strong)",
-    fontSize: 13
-  }
 };

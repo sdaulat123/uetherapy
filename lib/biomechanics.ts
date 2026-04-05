@@ -156,6 +156,8 @@ export function computeBiomechanicalFrame(frame: TrackingFrame): BiomechanicalFr
 
   return {
     timestampMs: frame.timestampMs,
+    handLandmarks: landmarks,
+    elbowPoint: frame.elbowPoint,
     wristAngleDeg,
     radialUlnarDeviationDeg,
     pronationSupinationDeg,
