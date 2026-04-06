@@ -24,20 +24,28 @@ import type {
 } from "@/lib/types";
 
 const EXERCISE_OPTIONS = getExerciseOptions();
+const EXERCISE_GROUPS = EXERCISE_OPTIONS.reduce<Record<string, typeof EXERCISE_OPTIONS>>(
+  (groups, option) => {
+    groups[option.group] ??= [];
+    groups[option.group].push(option);
+    return groups;
+  },
+  {}
+);
 
 interface DetectorBundle {
   hand: HandLandmarker;
   pose: PoseLandmarker;
 }
 
-type HandResultMap = Partial<Record<HandLabel, FrameResult>>;
-type HandSummaryMap = Partial<Record<HandLabel, SessionSummary>>;
+type HandSlot = "hand_0" | "hand_1";
+type HandResultMap = Partial<Record<HandSlot, FrameResult>>;
+type HandSummaryMap = Partial<Record<HandSlot, SessionSummary>>;
 
 function createEvaluatorMap(exercise: ExerciseName) {
   return {
-    Left: createExerciseEvaluator(exercise),
-    Right: createExerciseEvaluator(exercise),
-    Unknown: createExerciseEvaluator(exercise)
+    hand_0: createExerciseEvaluator(exercise),
+    hand_1: createExerciseEvaluator(exercise)
   };
 }
 
@@ -54,13 +62,13 @@ export function MotionDashboard() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const detectorRef = useRef<DetectorBundle | null>(null);
-  const evaluatorRef = useRef(createEvaluatorMap("wrist_flexion"));
+  const evaluatorRef = useRef(createEvaluatorMap("seated_wrist_flexion_arom"));
   const wristAnalyzerRef = useRef(new WristKinematicsAnalyzer());
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastHudUpdateRef = useRef(0);
 
-  const [exercise, setExercise] = useState<ExerciseName>("wrist_flexion");
+  const [exercise, setExercise] = useState<ExerciseName>("seated_wrist_flexion_arom");
   const [status, setStatus] = useState("Initializing browser tracker...");
   const [isRunning, setIsRunning] = useState(false);
   const [frameResults, setFrameResults] = useState<HandResultMap>({});
@@ -172,22 +180,21 @@ export function MotionDashboard() {
         const handResult = detectors.hand.detectForVideo(video, timestampMs);
         const poseResult = detectors.pose.detectForVideo(video, timestampMs);
 
-      if (poseResult.landmarks.length > 0) {
-        const elbow = poseResult.landmarks[0][14];
-        var elbowPoint = {
-          x: elbow.x * canvas.width,
-          y: elbow.y * canvas.height,
-          z: elbow.z * canvas.width
-        };
-      }
-
       const nextResults: HandResultMap = {};
       const nextSummaries: HandSummaryMap = {};
       const detectedHands = handResult.landmarks.length;
-      const elbowPointValue = typeof elbowPoint === "undefined" ? null : elbowPoint;
+      const elbowPointValue =
+        poseResult.landmarks.length > 0
+          ? {
+              x: poseResult.landmarks[0][14].x * canvas.width,
+              y: poseResult.landmarks[0][14].y * canvas.height,
+              z: poseResult.landmarks[0][14].z * canvas.width
+            }
+          : null;
 
       if (detectedHands > 0) {
         handResult.landmarks.forEach((landmarks, index) => {
+          const slot = handSlots[index] ?? "hand_1";
           const handedness =
             (handResult.handednesses?.[index]?.[0]?.categoryName as HandLabel | undefined) ??
             "Unknown";
@@ -221,12 +228,12 @@ export function MotionDashboard() {
           if (!biomechanicalFrame) {
             return;
           }
-          const result = evaluatorRef.current[handedness].process(biomechanicalFrame);
-          const summary = evaluatorRef.current[handedness].buildSummary(exercise);
+          const result = evaluatorRef.current[slot].process(biomechanicalFrame);
+          const summary = evaluatorRef.current[slot].buildSummary(exercise);
           result.handedness = handedness;
           summary.handedness = handedness;
-          nextResults[handedness] = result;
-          nextSummaries[handedness] = summary;
+          nextResults[slot] = result;
+          nextSummaries[slot] = summary;
         });
 
         drawHud(context, nextResults, nextSummaries);
@@ -252,6 +259,7 @@ export function MotionDashboard() {
           startTransition(() => {
             setStatus("Hand not visible. Center the working hand in frame.");
             setFrameResults({});
+            setSessionSummaries({});
           });
         }
       }
@@ -271,8 +279,8 @@ export function MotionDashboard() {
     const summary = {
       exercise,
       hands: {
-        Left: evaluatorRef.current.Left.buildSummary(exercise),
-        Right: evaluatorRef.current.Right.buildSummary(exercise)
+        hand_0: evaluatorRef.current.hand_0.buildSummary(exercise),
+        hand_1: evaluatorRef.current.hand_1.buildSummary(exercise)
       }
     };
     const blob = new Blob([JSON.stringify(summary, null, 2)], {
@@ -288,30 +296,8 @@ export function MotionDashboard() {
 
   return (
     <main style={styles.page}>
-      <section style={styles.hero}>
-        <div>
-          <p style={styles.kicker}>Upper-Extremity Rehabilitation</p>
-          <h1 style={styles.headline}>Browser-native motion tracking for therapy sessions.</h1>
-          <p style={styles.lede}>
-            This Vercel version runs hand tracking in the browser, computes biomechanical signals
-            client-side, and exports structured session data without a local Python runtime.
-          </p>
-        </div>
-        <div style={styles.heroBadge}>
-          <span style={styles.heroBadgeLabel}>Deployable Route</span>
-          <strong style={styles.heroBadgeValue}>Next.js + MediaPipe Vision</strong>
-        </div>
-      </section>
-
       <section style={styles.grid}>
         <article style={styles.viewportCard}>
-          <div style={styles.viewportHeader}>
-            <div>
-              <h2 style={styles.sectionTitle}>Realtime Capture</h2>
-              <p style={styles.sectionCopy}>{status}</p>
-            </div>
-            <span style={styles.livePill}>{isRunning ? "Camera Live" : "Offline"}</span>
-          </div>
           <div style={styles.videoShell}>
             <video ref={videoRef} playsInline muted style={styles.video} />
             <canvas ref={canvasRef} style={styles.canvas} />
@@ -335,10 +321,14 @@ export function MotionDashboard() {
               onChange={(event) => setExercise(event.target.value as ExerciseName)}
               style={styles.select}
             >
-              {EXERCISE_OPTIONS.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
+              {Object.entries(EXERCISE_GROUPS).map(([group, options]) => (
+                <optgroup key={group} label={group}>
+                  {options.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
             <p style={styles.exerciseDescription}>
@@ -364,81 +354,73 @@ export function MotionDashboard() {
             </div>
           </section>
 
-          <section style={styles.metricsGrid}>
-            <MetricCard
-              label="Reps"
-              value={`${frameResults.Left?.repCount ?? 0} / ${frameResults.Right?.repCount ?? 0}`}
-              accent="var(--accent)"
-            />
-            <MetricCard
-              label="Hands"
-              value={Object.keys(frameResults).length || "WAITING"}
-              accent="#d6885b"
-            />
-            <MetricCard
-              label="Primary"
-              value={
-                frameResults.Left || frameResults.Right
-                  ? `L ${frameResults.Left ? Number(frameResults.Left.primaryMetric).toFixed(1) : "-"} | R ${frameResults.Right ? Number(frameResults.Right.primaryMetric).toFixed(1) : "-"}`
-                  : "No signal"
-              }
-              accent="#0f5a46"
-            />
-            <MetricCard
-              label="ROM"
-              value={
-                `L ${sessionSummaries.Left ? sessionSummaries.Left.rom.toFixed(1) : "0.0"} | R ${sessionSummaries.Right ? sessionSummaries.Right.rom.toFixed(1) : "0.0"}`
-              }
-              accent="#5949a8"
-            />
-          </section>
+          {Object.keys(frameResults).length ? (
+            <>
+              <section style={styles.metricsGrid}>
+                <MetricCard
+                  label="Reps"
+                  value={`${frameResults.hand_0?.repCount ?? 0} / ${frameResults.hand_1?.repCount ?? 0}`}
+                  accent="var(--accent)"
+                />
+                <MetricCard
+                  label="Hands"
+                  value={Object.keys(frameResults).length}
+                  accent="#d6885b"
+                />
+                <MetricCard
+                  label="Primary"
+                  value={`H1 ${frameResults.hand_0 ? Number(frameResults.hand_0.primaryMetric).toFixed(1) : "-"} | H2 ${frameResults.hand_1 ? Number(frameResults.hand_1.primaryMetric).toFixed(1) : "-"}`}
+                  accent="#0f5a46"
+                />
+                <MetricCard
+                  label="ROM"
+                  value={`H1 ${sessionSummaries.hand_0 ? sessionSummaries.hand_0.rom.toFixed(1) : "0.0"} | H2 ${sessionSummaries.hand_1 ? sessionSummaries.hand_1.rom.toFixed(1) : "0.0"}`}
+                  accent="#5949a8"
+                />
+              </section>
 
-          <section style={styles.panel}>
-            <h2 style={styles.sectionTitle}>Live Metrics</h2>
-            {Object.keys(frameResults).length ? (
-              <div style={styles.handPanels}>
-                {(["Left", "Right"] as HandLabel[]).map((hand) =>
-                  frameResults[hand] ? (
-                    <div key={hand} style={styles.handPanel}>
-                      <h3 style={styles.handPanelTitle}>
-                        {hand} Hand: {frameResults[hand]?.state}
-                      </h3>
-                      <div style={styles.metricList}>
-                        {Object.entries(frameResults[hand]!.displayMetrics).map(([key, value]) => (
-                          <div key={`${hand}-${key}`} style={styles.metricRow}>
-                            <span style={styles.metricLabel}>{key.replaceAll("_", " ")}</span>
-                            <span style={styles.metricValue}>{String(value)}</span>
-                          </div>
-                        ))}
-                      </div>
-                      {frameResults[hand]!.warnings.length ? (
-                        <div style={styles.warningStack}>
-                          {frameResults[hand]!.warnings.map((warning) => (
-                            <div key={`${hand}-${warning}`} style={styles.warningCard}>
-                              {warning}
+              <section style={styles.panel}>
+                <h2 style={styles.sectionTitle}>Live Metrics</h2>
+                <div style={styles.handPanels}>
+                  {handSlots.map((hand) =>
+                    frameResults[hand] ? (
+                      <div key={hand} style={styles.handPanel}>
+                        <h3 style={styles.handPanelTitle}>
+                          {(frameResults[hand]?.handedness ?? "Unknown")} ({hand === "hand_0" ? "Hand 1" : "Hand 2"}): {frameResults[hand]?.state}
+                        </h3>
+                        <div style={styles.metricList}>
+                          {Object.entries(frameResults[hand]!.displayMetrics).map(([key, value]) => (
+                            <div key={`${hand}-${key}`} style={styles.metricRow}>
+                              <span style={styles.metricLabel}>{key.replaceAll("_", " ")}</span>
+                              <span style={styles.metricValue}>{String(value)}</span>
                             </div>
                           ))}
                         </div>
-                      ) : null}
-                    </div>
-                  ) : null
-                )}
-              </div>
-            ) : (
-              <div style={styles.metricList}>
-                <p style={styles.sectionCopy}>Metrics appear once a hand is detected.</p>
-              </div>
-            )}
-          </section>
+                        {frameResults[hand]!.warnings.length ? (
+                          <div style={styles.warningStack}>
+                            {frameResults[hand]!.warnings.map((warning) => (
+                              <div key={`${hand}-${warning}`} style={styles.warningCard}>
+                                {warning}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null
+                  )}
+                </div>
+              </section>
+            </>
+          ) : null}
 
-          <section style={styles.panel}>
-            <h2 style={styles.sectionTitle}>Session Output</h2>
-            <pre style={styles.jsonPreview}>
-              {Object.keys(sessionSummaries).length
-                ? JSON.stringify({ exercise, hands: sessionSummaries }, null, 2)
-                : '{\n  "status": "waiting"\n}'}
-            </pre>
-          </section>
+          {Object.keys(sessionSummaries).length ? (
+            <section style={styles.panel}>
+              <h2 style={styles.sectionTitle}>Session Output</h2>
+              <pre style={styles.jsonPreview}>
+                {JSON.stringify({ exercise, hands: sessionSummaries }, null, 2)}
+              </pre>
+            </section>
+          ) : null}
         </aside>
       </section>
     </main>
@@ -467,14 +449,18 @@ function drawHud(
   results: HandResultMap,
   summaries: HandSummaryMap
 ) {
-  (Object.entries(results) as Array<[HandLabel, FrameResult]>).forEach(([hand, result], panelIndex) => {
+  (Object.entries(results) as Array<[HandSlot, FrameResult]>).forEach(([hand, result], panelIndex) => {
     const summary = summaries[hand];
     const left = 20 + panelIndex * 330;
     context.fillStyle = "rgba(17, 21, 18, 0.72)";
     context.fillRect(left, 20, 310, 170);
     context.fillStyle = "#f5efe3";
     context.font = '600 18px var(--font-sans), sans-serif';
-    context.fillText(`${hand} ${result.exerciseName.replaceAll("_", " ")}`, left + 16, 50);
+    context.fillText(
+      `${result.handedness ?? "Unknown"} ${panelIndex + 1} ${result.exerciseName.replaceAll("_", " ")}`,
+      left + 16,
+      50
+    );
     context.font = '400 14px var(--font-mono), monospace';
     const lines = [
       `State: ${result.state}`,
@@ -507,51 +493,6 @@ const styles: Record<string, React.CSSProperties> = {
   page: {
     padding: "40px 32px 56px"
   },
-  hero: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1.6fr) minmax(260px, 0.8fr)",
-    gap: 24,
-    alignItems: "end",
-    marginBottom: 28
-  },
-  kicker: {
-    margin: 0,
-    color: "var(--accent-strong)",
-    letterSpacing: "0.14em",
-    textTransform: "uppercase",
-    fontSize: 12
-  },
-  headline: {
-    margin: "10px 0 12px",
-    fontSize: "clamp(2.6rem, 4vw, 4.6rem)",
-    lineHeight: 0.95,
-    maxWidth: 820
-  },
-  lede: {
-    margin: 0,
-    maxWidth: 760,
-    color: "var(--muted)",
-    fontSize: 18,
-    lineHeight: 1.5
-  },
-  heroBadge: {
-    border: "1px solid var(--line)",
-    borderRadius: 28,
-    background: "linear-gradient(180deg, rgba(255,255,255,0.88), rgba(249,241,228,0.88))",
-    padding: 22,
-    boxShadow: "var(--shadow)"
-  },
-  heroBadgeLabel: {
-    display: "block",
-    marginBottom: 10,
-    color: "var(--muted)",
-    fontSize: 12,
-    letterSpacing: "0.14em",
-    textTransform: "uppercase"
-  },
-  heroBadgeValue: {
-    fontSize: 24
-  },
   grid: {
     display: "grid",
     gridTemplateColumns: "minmax(0, 1.4fr) minmax(360px, 0.9fr)",
@@ -565,13 +506,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 22,
     backdropFilter: "blur(10px)"
   },
-  viewportHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 16,
-    alignItems: "start",
-    marginBottom: 18
-  },
   sectionTitle: {
     margin: 0,
     fontSize: 22
@@ -580,14 +514,6 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "8px 0 0",
     color: "var(--muted)",
     lineHeight: 1.5
-  },
-  livePill: {
-    borderRadius: 999,
-    padding: "10px 14px",
-    background: "rgba(29,127,100,0.12)",
-    color: "var(--accent-strong)",
-    fontSize: 13,
-    fontWeight: 600
   },
   videoShell: {
     position: "relative",
@@ -744,3 +670,4 @@ const styles: Record<string, React.CSSProperties> = {
     overflowX: "auto"
   },
 };
+  const handSlots: HandSlot[] = ["hand_0", "hand_1"];

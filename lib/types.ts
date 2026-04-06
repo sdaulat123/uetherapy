@@ -43,7 +43,35 @@ export type ExerciseName =
   | "rubber_band_extension"
   | "wrist_flexion_stretch"
   | "wrist_extension_stretch"
-  | "prayer_stretch";
+  | "prayer_stretch"
+  | "hand_arom_tendon_gliding_series"
+  | "hand_arom_pip_blocking"
+  | "hand_arom_dip_blocking"
+  | "seated_finger_composite_flexion_stretch"
+  | "thumb_abduction_arom_on_table"
+  | "seated_thumb_composite_flexion_arom"
+  | "hand_prom_finger_extension"
+  | "seated_forearm_pronation_and_supination_arom"
+  | "wrist_arom_radial_and_ulnar_deviation"
+  | "seated_wrist_flexion_arom"
+  | "seated_wrist_extension_arom"
+  | "wrist_arom_wrist_circumduction"
+  | "standing_wrist_flexion_stretch"
+  | "standing_wrist_extension_stretch"
+  | "seated_wrist_flexion_prom_stretch"
+  | "seated_wrist_extension_prom"
+  | "wrist_prayer_stretch_at_table"
+  | "seated_wrist_extension_with_dumbbell"
+  | "seated_wrist_flexion_with_dumbbell"
+  | "seated_wrist_radial_deviation_with_dumbbell"
+  | "forearm_pronation_and_supination_with_hammer"
+  | "seated_gripping_towel"
+  | "tip_pinch_with_putty"
+  | "resisted_finger_extension_and_thumb_abduction"
+  | "hand_towel_scrunching"
+  | "seated_thumb_extension_with_resistance"
+  | "thumb_radial_abduction_with_rubber_band_palm_down"
+  | "putty_squeezes";
 
 export interface Point3D {
   x: number;
@@ -119,11 +147,12 @@ export interface SessionSummary {
     rom: number;
     avg_velocity: number;
   }>;
-  [key: string]: string | number | string[] | SessionSummary["rep_details"];
+  [key: string]: string | number | string[] | SessionSummary["rep_details"] | undefined;
 }
 
 export interface ExerciseOption {
   id: ExerciseName;
   label: string;
   description: string;
+  group: string;
 }

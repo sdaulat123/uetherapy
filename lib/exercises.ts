@@ -5,6 +5,7 @@ import type {
   FrameResult,
   SessionSummary
 } from "@/lib/types";
+import { distance } from "@/lib/biomechanics";
 
 type MovementState = "REST" | "ACTIVE" | "HOLD";
 
@@ -26,94 +27,214 @@ interface RepSample {
 
 const EXERCISE_META: ExerciseOption[] = [
   {
-    id: "tendon_gliding",
-    label: "Tendon Gliding",
+    id: "hand_arom_tendon_gliding_series",
+    label: "Hand AROM Tendon Gliding Series",
     description: "Sequence detection for open, hook, flat, and fist positions."
+    ,
+    group: "Hand ROM HEP.pdf"
   },
   {
-    id: "pip_blocking",
-    label: "PIP Blocking",
+    id: "hand_arom_pip_blocking",
+    label: "Hand AROM PIP Blocking",
     description: "Tracks isolated PIP flexion while penalizing MCP and DIP compensation."
+    ,
+    group: "Hand ROM HEP.pdf"
   },
   {
-    id: "dip_blocking",
-    label: "DIP Blocking",
+    id: "hand_arom_dip_blocking",
+    label: "Hand AROM DIP Blocking",
     description: "Tracks isolated DIP flexion with compensation monitoring."
+    ,
+    group: "Hand ROM HEP.pdf"
   },
   {
     id: "finger_spreading",
     label: "Finger Spreading",
     description: "Measures fingertip spread and spread symmetry across the hand."
+    ,
+    group: "Hand ROM HEP.pdf"
   },
   {
-    id: "composite_finger_flexion",
-    label: "Composite Finger Flexion",
-    description: "Aggregates all finger joint flexion into a single total flexion score."
+    id: "seated_finger_composite_flexion_stretch",
+    label: "Seated Finger Composite Flexion Stretch",
+    description: "Aggregates finger flexion into a single total flexion score."
+    ,
+    group: "Hand ROM HEP.pdf"
   },
   {
     id: "thumb_opposition",
     label: "Thumb Opposition",
     description: "Detects thumb-to-finger contact with precision and success-rate metrics."
+    ,
+    group: "Hand ROM HEP.pdf"
   },
   {
-    id: "thumb_abduction",
-    label: "Thumb Abduction",
+    id: "thumb_abduction_arom_on_table",
+    label: "Thumb Abduction AROM on Table",
     description: "Measures radial thumb displacement relative to the index-wrist base."
+    ,
+    group: "Hand ROM HEP.pdf"
   },
   {
-    id: "wrist_flexion",
-    label: "Wrist Flexion",
-    description: "Realtime wrist angle tracking with repetition gating and form warnings."
+    id: "seated_thumb_composite_flexion_arom",
+    label: "Seated Thumb Composite Flexion AROM",
+    description: "Tracks thumb flexion and opposition closure through composite thumb motion."
+    ,
+    group: "Hand ROM HEP.pdf"
   },
   {
-    id: "wrist_extension",
-    label: "Wrist Extension",
-    description: "Extension tracking using inverted wrist-angle thresholding."
+    id: "hand_prom_finger_extension",
+    label: "Hand PROM Finger Extension",
+    description: "Monitors passive-style finger extension opening and return."
+    ,
+    group: "Hand ROM HEP.pdf"
   },
   {
-    id: "radial_ulnar_deviation",
-    label: "Radial/Ulnar Deviation",
-    description: "Lateral hand deviation relative to the forearm axis."
-  },
-  {
-    id: "wrist_circumduction",
-    label: "Wrist Circumduction",
-    description: "Tracks circular hand trajectory completeness and smoothness."
-  },
-  {
-    id: "pronation_supination",
-    label: "Pronation/Supination",
+    id: "seated_forearm_pronation_and_supination_arom",
+    label: "Seated Forearm Pronation and Supination AROM",
     description: "Uses palm orientation to estimate forearm rotation control."
+    ,
+    group: "Wrist ROM HEP.pdf"
   },
   {
-    id: "grip_strength",
-    label: "Grip",
-    description: "Measures finger curl closure completeness and hold quality."
+    id: "wrist_arom_radial_and_ulnar_deviation",
+    label: "Wrist AROM Radial and Ulnar deviation",
+    description: "Lateral hand deviation relative to the forearm axis."
+    ,
+    group: "Wrist ROM HEP.pdf"
   },
   {
-    id: "tip_pinch",
-    label: "Tip Pinch",
-    description: "Thumb-index pinch precision with hold stability."
+    id: "seated_wrist_flexion_arom",
+    label: "Seated Wrist Flexion AROM",
+    description: "Realtime wrist flexion tracking with repetition gating and form warnings."
+    ,
+    group: "Wrist ROM HEP.pdf"
   },
   {
-    id: "rubber_band_extension",
-    label: "Rubber Band Extension",
-    description: "Finger extension tracking with controlled return scoring."
+    id: "seated_wrist_extension_arom",
+    label: "Seated Wrist Extension AROM",
+    description: "Realtime wrist extension tracking with repetition gating and form warnings."
+    ,
+    group: "Wrist ROM HEP.pdf"
   },
   {
-    id: "wrist_flexion_stretch",
-    label: "Wrist Flexion Stretch",
-    description: "Static hold detection with stability monitoring."
+    id: "wrist_arom_wrist_circumduction",
+    label: "Wrist AROM Wrist Circumduction",
+    description: "Tracks circular hand trajectory completeness and smoothness."
+    ,
+    group: "Wrist ROM HEP.pdf"
   },
   {
-    id: "wrist_extension_stretch",
-    label: "Wrist Extension Stretch",
-    description: "Static extension hold detection with stability scoring."
+    id: "standing_wrist_flexion_stretch",
+    label: "Standing Wrist Flexion Stretch",
+    description: "Static wrist flexion hold detection with stability monitoring."
+    ,
+    group: "Wrist Stretches HEP.pdf"
   },
   {
-    id: "prayer_stretch",
-    label: "Prayer Stretch",
+    id: "standing_wrist_extension_stretch",
+    label: "Standing Wrist Extension Stretch",
+    description: "Static wrist extension hold detection with stability scoring."
+    ,
+    group: "Wrist Stretches HEP.pdf"
+  },
+  {
+    id: "seated_wrist_flexion_prom_stretch",
+    label: "Seated Wrist Flexion PROM Stretch",
+    description: "Passive-style wrist flexion stretch hold with stability monitoring."
+    ,
+    group: "Wrist Stretches HEP.pdf"
+  },
+  {
+    id: "seated_wrist_extension_prom",
+    label: "Seated Wrist Extension PROM",
+    description: "Passive-style wrist extension stretch hold with stability monitoring."
+    ,
+    group: "Wrist Stretches HEP.pdf"
+  },
+  {
+    id: "wrist_prayer_stretch_at_table",
+    label: "Wrist Prayer Stretch at Table",
     description: "Static prayer-position stretch with hold stability monitoring."
+    ,
+    group: "Wrist Stretches HEP.pdf"
+  },
+  {
+    id: "seated_wrist_extension_with_dumbbell",
+    label: "Seated Wrist Extension with Dumbbell",
+    description: "Loaded wrist extension tracking using the wrist extension movement pattern."
+    ,
+    group: "Strengthening HEP.pdf"
+  },
+  {
+    id: "seated_wrist_flexion_with_dumbbell",
+    label: "Seated Wrist Flexion with Dumbbell",
+    description: "Loaded wrist flexion tracking using the wrist flexion movement pattern."
+    ,
+    group: "Strengthening HEP.pdf"
+  },
+  {
+    id: "seated_wrist_radial_deviation_with_dumbbell",
+    label: "Seated Wrist Radial Deviation with Dumbbell",
+    description: "Loaded radial deviation tracking using the radial-ulnar movement pattern."
+    ,
+    group: "Strengthening HEP.pdf"
+  },
+  {
+    id: "forearm_pronation_and_supination_with_hammer",
+    label: "Forearm Pronation and Supination with Hammer",
+    description: "Loaded forearm rotation tracking using pronation-supination motion."
+    ,
+    group: "Strengthening HEP.pdf"
+  },
+  {
+    id: "seated_gripping_towel",
+    label: "Seated Gripping Towel",
+    description: "Measures finger curl closure completeness and hold quality."
+    ,
+    group: "Strengthening HEP.pdf"
+  },
+  {
+    id: "tip_pinch_with_putty",
+    label: "Tip Pinch with Putty",
+    description: "Thumb-index pinch precision with hold stability."
+    ,
+    group: "Strengthening HEP.pdf"
+  },
+  {
+    id: "resisted_finger_extension_and_thumb_abduction",
+    label: "Resisted Finger Extension and Thumb Abduction",
+    description: "Tracks finger extension and thumb opening against resistance."
+    ,
+    group: "Strengthening HEP.pdf"
+  },
+  {
+    id: "hand_towel_scrunching",
+    label: "Hand Towel Scrunching",
+    description: "Tracks composite finger flexion during towel-scrunch style grasping."
+    ,
+    group: "Strengthening HEP.pdf"
+  },
+  {
+    id: "seated_thumb_extension_with_resistance",
+    label: "Seated Thumb Extension with Resistance",
+    description: "Tracks thumb opening/extension against resistance."
+    ,
+    group: "Strengthening HEP.pdf"
+  },
+  {
+    id: "thumb_radial_abduction_with_rubber_band_palm_down",
+    label: "Thumb Radial Abduction with Rubber Band - Palm Down",
+    description: "Tracks thumb radial abduction against elastic resistance."
+    ,
+    group: "Strengthening HEP.pdf"
+  },
+  {
+    id: "putty_squeezes",
+    label: "Putty Squeezes",
+    description: "Measures global grip closure completeness and return control."
+    ,
+    group: "Strengthening HEP.pdf"
   }
 ];
 
@@ -862,33 +983,85 @@ class GripStrengthEvaluator extends BaseExerciseEvaluator {
 }
 
 class TipPinchEvaluator extends BaseExerciseEvaluator {
+  private readonly contactThreshold = 0.34;
+  private readonly releaseThreshold = 0.52;
+  private readonly minContactFrames = 2;
+  private readonly minReleaseFrames = 2;
+  private readonly minContactMs = 40;
+  private contactFrames = 0;
+  private releaseFrames = 0;
+  private inContact = false;
+  private contactStartedAt: number | null = null;
+
   constructor() {
-    super({
-      activeThreshold: -32,
-      restThreshold: -48,
-      holdThreshold: -28,
-      velocityThreshold: 1,
-      minHoldMs: 80,
-      debounceFrames: 2,
-      invertMetric: true
-    });
+    super();
   }
 
   process(frame: BiomechanicalFrame): FrameResult {
-    const primary = frame.thumbDistancesPx.index;
-    const { state, velocity } = this.updateState(primary, frame.timestampMs);
+    const palmScale = mean([
+      distance(frame.handLandmarks.wrist, frame.handLandmarks.index_mcp),
+      distance(frame.handLandmarks.wrist, frame.handLandmarks.pinky_mcp),
+      distance(frame.handLandmarks.index_mcp, frame.handLandmarks.pinky_mcp)
+    ]);
+    const rawDistance = frame.thumbDistancesPx.index;
+    const normalizedDistance = rawDistance / Math.max(palmScale, 1);
+    const { velocity } = this.updateState(normalizedDistance, frame.timestampMs);
+
+    if (normalizedDistance <= this.contactThreshold) {
+      this.contactFrames += 1;
+      this.releaseFrames = 0;
+      if (!this.inContact && this.contactFrames >= this.minContactFrames) {
+        this.inContact = true;
+        this.contactStartedAt = frame.timestampMs;
+      }
+    } else if (normalizedDistance >= this.releaseThreshold) {
+      this.releaseFrames += 1;
+      this.contactFrames = 0;
+      if (this.inContact && this.releaseFrames >= this.minReleaseFrames) {
+        if (
+          this.contactStartedAt !== null &&
+          frame.timestampMs - this.contactStartedAt >= this.minContactMs
+        ) {
+          this.forceRep(normalizedDistance, frame.timestampMs, velocity);
+        }
+        this.inContact = false;
+        this.contactStartedAt = null;
+      }
+    } else {
+      this.contactFrames = 0;
+      this.releaseFrames = 0;
+    }
+
+    const state = this.inContact
+      ? frame.timestampMs - (this.contactStartedAt ?? frame.timestampMs) >= 80
+        ? "HOLD"
+        : "ACTIVE"
+      : "REST";
+
     return {
       exerciseName: "tip_pinch",
       state,
       repCount: this.repCount,
-      primaryMetric: primary,
+      primaryMetric: normalizedDistance,
       displayMetrics: {
-        pinch_distance_px: primary.toFixed(1),
-        pinch_precision: Math.max(0, 1 - primary / 52).toFixed(2),
-        hold_stability: this.windowStd(20).toFixed(2),
-        velocity_px_s: velocity.toFixed(1)
+        pinch_distance_px: rawDistance.toFixed(1),
+        pinch_ratio: normalizedDistance.toFixed(2),
+        pinch_precision: Math.max(
+          0,
+          Math.min(1, (this.releaseThreshold - normalizedDistance) / this.releaseThreshold)
+        ).toFixed(2),
+        hold_stability: this.windowStd(20).toFixed(3),
+        velocity_ratio_s: velocity.toFixed(2)
       },
       warnings: []
+    };
+  }
+
+  override buildSummary(name: ExerciseName): SessionSummary {
+    return {
+      ...super.buildSummary(name),
+      contact_threshold_ratio: this.contactThreshold,
+      release_threshold_ratio: this.releaseThreshold
     };
   }
 }
@@ -958,46 +1131,74 @@ class StaticStretchEvaluator extends BaseExerciseEvaluator {
 export function createExerciseEvaluator(name: ExerciseName) {
   switch (name) {
     case "tendon_gliding":
+    case "hand_arom_tendon_gliding_series":
       return new TendonGlidingEvaluator();
     case "pip_blocking":
+    case "hand_arom_pip_blocking":
       return new PIPBlockingEvaluator();
     case "dip_blocking":
+    case "hand_arom_dip_blocking":
       return new DIPBlockingEvaluator();
     case "finger_spreading":
+    case "hand_prom_finger_extension":
       return new FingerSpreadingEvaluator();
     case "composite_finger_flexion":
+    case "seated_finger_composite_flexion_stretch":
+    case "hand_towel_scrunching":
       return new CompositeFingerFlexionEvaluator();
     case "thumb_opposition":
+    case "seated_thumb_composite_flexion_arom":
       return new ThumbOppositionEvaluator();
     case "thumb_abduction":
+    case "thumb_abduction_arom_on_table":
+    case "seated_thumb_extension_with_resistance":
+    case "thumb_radial_abduction_with_rubber_band_palm_down":
       return new ThumbAbductionEvaluator();
     case "wrist_extension":
+    case "seated_wrist_extension_arom":
+    case "seated_wrist_extension_with_dumbbell":
       return new WristExtensionEvaluator();
     case "radial_ulnar_deviation":
+    case "wrist_arom_radial_and_ulnar_deviation":
+    case "seated_wrist_radial_deviation_with_dumbbell":
       return new RadialUlnarDeviationEvaluator();
     case "wrist_circumduction":
+    case "wrist_arom_wrist_circumduction":
       return new WristCircumductionEvaluator();
     case "pronation_supination":
+    case "seated_forearm_pronation_and_supination_arom":
+    case "forearm_pronation_and_supination_with_hammer":
       return new PronationSupinationEvaluator();
     case "grip_strength":
+    case "seated_gripping_towel":
+    case "putty_squeezes":
       return new GripStrengthEvaluator();
     case "tip_pinch":
+    case "tip_pinch_with_putty":
       return new TipPinchEvaluator();
     case "rubber_band_extension":
+    case "resisted_finger_extension_and_thumb_abduction":
       return new RubberBandExtensionEvaluator();
     case "wrist_flexion_stretch":
+    case "standing_wrist_flexion_stretch":
+    case "seated_wrist_flexion_prom_stretch":
       return new StaticStretchEvaluator("wrist_flexion_stretch", (frame) => frame.wristFlexionDeg);
     case "wrist_extension_stretch":
+    case "standing_wrist_extension_stretch":
+    case "seated_wrist_extension_prom":
       return new StaticStretchEvaluator(
         "wrist_extension_stretch",
         (frame) => frame.wristExtensionDeg
       );
     case "prayer_stretch":
+    case "wrist_prayer_stretch_at_table":
       return new StaticStretchEvaluator(
         "prayer_stretch",
         (frame) => Math.max(frame.wristExtensionDeg, frame.wristFlexionDeg) + Math.max(frame.radialDeviationDeg, frame.ulnarDeviationDeg) * 0.5
       );
     case "wrist_flexion":
+    case "seated_wrist_flexion_arom":
+    case "seated_wrist_flexion_with_dumbbell":
     default:
       return new WristFlexionEvaluator();
   }
