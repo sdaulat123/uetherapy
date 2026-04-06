@@ -466,12 +466,24 @@ function blockIsolationScore(primary: number, otherAngles: number[]) {
 }
 
 class TendonGlidingEvaluator extends BaseExerciseEvaluator {
-  private readonly expectedSequence = ["open", "hook", "flat", "fist"] as const;
-  private sequenceProgress: string[] = [];
+  private readonly expectedSequence = [
+    "open",
+    "hook",
+    "open",
+    "duck_bill",
+    "open",
+    "flat_fist",
+    "open",
+    "full_fist"
+  ] as const;
+  private readonly requiredHoldMs = 2000;
+  private sequenceProgress = 0;
   private lastTransitionTimeMs: number | null = null;
   private transitionDurationsMs: number[] = [];
+  private currentStablePose: (typeof this.expectedSequence)[number] | "transition" = "transition";
+  private stablePoseStartedAt: number | null = null;
 
-  process(frame: BiomechanicalFrame): FrameResult {
+  private classifyPose(frame: BiomechanicalFrame) {
     const pipMean = mean([
       frame.fingerAngles.index.pip,
       frame.fingerAngles.middle.pip,
@@ -491,46 +503,75 @@ class TendonGlidingEvaluator extends BaseExerciseEvaluator {
       frame.fingerAngles.pinky.mcp
     ]);
 
-    let poseState = "transition";
-    if (pipMean < 35 && dipMean < 30 && mcpMean < 30) {
-      poseState = "open";
-    } else if (pipMean > 70 && dipMean > 55 && mcpMean < 45) {
-      poseState = "hook";
-    } else if (mcpMean > 45 && pipMean < 45) {
-      poseState = "flat";
-    } else if (mcpMean > 65 && pipMean > 65 && dipMean > 45) {
-      poseState = "fist";
+    if (pipMean < 35 && dipMean < 25 && mcpMean < 25) {
+      return { pose: "open" as const, pipMean, dipMean, mcpMean };
+    }
+    if (pipMean > 75 && dipMean > 55 && mcpMean < 40) {
+      return { pose: "hook" as const, pipMean, dipMean, mcpMean };
+    }
+    if (mcpMean > 55 && pipMean < 35 && dipMean < 25) {
+      return { pose: "duck_bill" as const, pipMean, dipMean, mcpMean };
+    }
+    if (mcpMean > 55 && pipMean > 45 && dipMean < 30) {
+      return { pose: "flat_fist" as const, pipMean, dipMean, mcpMean };
+    }
+    if (mcpMean > 60 && pipMean > 70 && dipMean > 50) {
+      return { pose: "full_fist" as const, pipMean, dipMean, mcpMean };
     }
 
-    if (!this.sequenceProgress.length || poseState !== this.sequenceProgress.at(-1)) {
-      if (this.expectedSequence.includes(poseState as (typeof this.expectedSequence)[number])) {
-        const expected = this.expectedSequence[this.sequenceProgress.length % this.expectedSequence.length];
-        if (poseState === expected) {
-          if (this.lastTransitionTimeMs !== null) {
-            this.transitionDurationsMs.push(frame.timestampMs - this.lastTransitionTimeMs);
-          }
-          this.lastTransitionTimeMs = frame.timestampMs;
-          this.sequenceProgress.push(poseState);
-          if (this.sequenceProgress.length === this.expectedSequence.length) {
-            this.forceRep(mcpMean, frame.timestampMs);
-            this.sequenceProgress = [];
-          }
-        }
+    return { pose: "transition" as const, pipMean, dipMean, mcpMean };
+  }
+
+  process(frame: BiomechanicalFrame): FrameResult {
+    const { pose, pipMean, dipMean, mcpMean } = this.classifyPose(frame);
+
+    if (pose !== this.currentStablePose) {
+      this.currentStablePose = pose;
+      this.stablePoseStartedAt = pose === "transition" ? null : frame.timestampMs;
+    }
+
+    const expectedPose = this.expectedSequence[this.sequenceProgress];
+    if (
+      pose !== "transition" &&
+      pose === expectedPose &&
+      this.stablePoseStartedAt !== null &&
+      frame.timestampMs - this.stablePoseStartedAt >= this.requiredHoldMs
+    ) {
+      if (this.lastTransitionTimeMs !== null) {
+        this.transitionDurationsMs.push(frame.timestampMs - this.lastTransitionTimeMs);
+      }
+      this.lastTransitionTimeMs = frame.timestampMs;
+      this.sequenceProgress += 1;
+      this.stablePoseStartedAt = frame.timestampMs;
+
+      if (this.sequenceProgress >= this.expectedSequence.length) {
+        this.forceRep(mcpMean + pipMean + dipMean, frame.timestampMs);
+        this.sequenceProgress = 0;
+        this.lastTransitionTimeMs = null;
       }
     }
 
-    const { velocity } = this.updateState(mcpMean, frame.timestampMs);
+    const sequenceMetric = mcpMean + pipMean + dipMean;
+    const { velocity } = this.updateState(sequenceMetric, frame.timestampMs);
     return {
       exerciseName: "tendon_gliding",
-      state: poseState.toUpperCase(),
+      state: pose.replaceAll("_", " ").toUpperCase(),
       repCount: this.repCount,
-      primaryMetric: mcpMean,
+      primaryMetric: sequenceMetric,
       displayMetrics: {
-        sequence_accuracy: (this.sequenceProgress.length / this.expectedSequence.length).toFixed(2),
+        current_pose: pose.replaceAll("_", " "),
+        next_target: this.expectedSequence[this.sequenceProgress]?.replaceAll("_", " ") ?? "complete",
+        sequence_accuracy: (this.sequenceProgress / this.expectedSequence.length).toFixed(2),
+        hold_progress_s:
+          pose !== "transition" && this.stablePoseStartedAt !== null
+            ? ((frame.timestampMs - this.stablePoseStartedAt) / 1000).toFixed(1)
+            : "0.0",
         transition_time_s: this.transitionDurationsMs.length
           ? (mean(this.transitionDurationsMs) / 1000).toFixed(2)
           : "0.00",
         mean_mcp_deg: mcpMean.toFixed(1),
+        mean_pip_deg: pipMean.toFixed(1),
+        mean_dip_deg: dipMean.toFixed(1),
         velocity_deg_s: velocity.toFixed(1)
       },
       warnings: []
