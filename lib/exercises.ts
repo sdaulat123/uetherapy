@@ -31,210 +31,210 @@ const EXERCISE_META: ExerciseOption[] = [
     label: "Hand AROM Tendon Gliding Series",
     description: "Sequence detection for open, hook, flat, and fist positions."
     ,
-    group: "Hand ROM HEP.pdf"
+    group: "Hand Range of Motion"
   },
   {
     id: "hand_arom_pip_blocking",
     label: "Hand AROM PIP Blocking",
     description: "Tracks isolated PIP flexion while penalizing MCP and DIP compensation."
     ,
-    group: "Hand ROM HEP.pdf"
+    group: "Hand Range of Motion"
   },
   {
     id: "hand_arom_dip_blocking",
     label: "Hand AROM DIP Blocking",
     description: "Tracks isolated DIP flexion with compensation monitoring."
     ,
-    group: "Hand ROM HEP.pdf"
+    group: "Hand Range of Motion"
   },
   {
     id: "finger_spreading",
     label: "Finger Spreading",
     description: "Measures fingertip spread and spread symmetry across the hand."
     ,
-    group: "Hand ROM HEP.pdf"
+    group: "Hand Range of Motion"
   },
   {
     id: "seated_finger_composite_flexion_stretch",
     label: "Seated Finger Composite Flexion Stretch",
     description: "Aggregates finger flexion into a single total flexion score."
     ,
-    group: "Hand ROM HEP.pdf"
+    group: "Hand Range of Motion"
   },
   {
     id: "thumb_opposition",
     label: "Thumb Opposition",
     description: "Detects thumb-to-finger contact with precision and success-rate metrics."
     ,
-    group: "Hand ROM HEP.pdf"
+    group: "Hand Range of Motion"
   },
   {
     id: "thumb_abduction_arom_on_table",
     label: "Thumb Abduction AROM on Table",
     description: "Measures radial thumb displacement relative to the index-wrist base."
     ,
-    group: "Hand ROM HEP.pdf"
+    group: "Hand Range of Motion"
   },
   {
     id: "seated_thumb_composite_flexion_arom",
     label: "Seated Thumb Composite Flexion AROM",
     description: "Tracks thumb flexion and opposition closure through composite thumb motion."
     ,
-    group: "Hand ROM HEP.pdf"
+    group: "Hand Range of Motion"
   },
   {
     id: "hand_prom_finger_extension",
     label: "Hand PROM Finger Extension",
     description: "Monitors passive-style finger extension opening and return."
     ,
-    group: "Hand ROM HEP.pdf"
+    group: "Hand Range of Motion"
   },
   {
     id: "seated_forearm_pronation_and_supination_arom",
     label: "Seated Forearm Pronation and Supination AROM",
     description: "Uses palm orientation to estimate forearm rotation control."
     ,
-    group: "Wrist ROM HEP.pdf"
+    group: "Wrist Range of Motion"
   },
   {
     id: "wrist_arom_radial_and_ulnar_deviation",
     label: "Wrist AROM Radial and Ulnar deviation",
     description: "Lateral hand deviation relative to the forearm axis."
     ,
-    group: "Wrist ROM HEP.pdf"
+    group: "Wrist Range of Motion"
   },
   {
     id: "seated_wrist_flexion_arom",
     label: "Seated Wrist Flexion AROM",
     description: "Realtime wrist flexion tracking with repetition gating and form warnings."
     ,
-    group: "Wrist ROM HEP.pdf"
+    group: "Wrist Range of Motion"
   },
   {
     id: "seated_wrist_extension_arom",
     label: "Seated Wrist Extension AROM",
     description: "Realtime wrist extension tracking with repetition gating and form warnings."
     ,
-    group: "Wrist ROM HEP.pdf"
+    group: "Wrist Range of Motion"
   },
   {
     id: "wrist_arom_wrist_circumduction",
     label: "Wrist AROM Wrist Circumduction",
     description: "Tracks circular hand trajectory completeness and smoothness."
     ,
-    group: "Wrist ROM HEP.pdf"
+    group: "Wrist Range of Motion"
   },
   {
     id: "standing_wrist_flexion_stretch",
     label: "Standing Wrist Flexion Stretch",
     description: "Static wrist flexion hold detection with stability monitoring."
     ,
-    group: "Wrist Stretches HEP.pdf"
+    group: "Wrist Stretches"
   },
   {
     id: "standing_wrist_extension_stretch",
     label: "Standing Wrist Extension Stretch",
     description: "Static wrist extension hold detection with stability scoring."
     ,
-    group: "Wrist Stretches HEP.pdf"
+    group: "Wrist Stretches"
   },
   {
     id: "seated_wrist_flexion_prom_stretch",
     label: "Seated Wrist Flexion PROM Stretch",
     description: "Passive-style wrist flexion stretch hold with stability monitoring."
     ,
-    group: "Wrist Stretches HEP.pdf"
+    group: "Wrist Stretches"
   },
   {
     id: "seated_wrist_extension_prom",
     label: "Seated Wrist Extension PROM",
     description: "Passive-style wrist extension stretch hold with stability monitoring."
     ,
-    group: "Wrist Stretches HEP.pdf"
+    group: "Wrist Stretches"
   },
   {
     id: "wrist_prayer_stretch_at_table",
     label: "Wrist Prayer Stretch at Table",
     description: "Static prayer-position stretch with hold stability monitoring."
     ,
-    group: "Wrist Stretches HEP.pdf"
+    group: "Wrist Stretches"
   },
   {
     id: "seated_wrist_extension_with_dumbbell",
     label: "Seated Wrist Extension with Dumbbell",
     description: "Loaded wrist extension tracking using the wrist extension movement pattern."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   },
   {
     id: "seated_wrist_flexion_with_dumbbell",
     label: "Seated Wrist Flexion with Dumbbell",
     description: "Loaded wrist flexion tracking using the wrist flexion movement pattern."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   },
   {
     id: "seated_wrist_radial_deviation_with_dumbbell",
     label: "Seated Wrist Radial Deviation with Dumbbell",
     description: "Loaded radial deviation tracking using the radial-ulnar movement pattern."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   },
   {
     id: "forearm_pronation_and_supination_with_hammer",
     label: "Forearm Pronation and Supination with Hammer",
     description: "Loaded forearm rotation tracking using pronation-supination motion."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   },
   {
     id: "seated_gripping_towel",
     label: "Seated Gripping Towel",
     description: "Measures finger curl closure completeness and hold quality."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   },
   {
     id: "tip_pinch_with_putty",
     label: "Tip Pinch with Putty",
     description: "Thumb-index pinch precision with hold stability."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   },
   {
     id: "resisted_finger_extension_and_thumb_abduction",
     label: "Resisted Finger Extension and Thumb Abduction",
     description: "Tracks finger extension and thumb opening against resistance."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   },
   {
     id: "hand_towel_scrunching",
     label: "Hand Towel Scrunching",
     description: "Tracks composite finger flexion during towel-scrunch style grasping."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   },
   {
     id: "seated_thumb_extension_with_resistance",
     label: "Seated Thumb Extension with Resistance",
     description: "Tracks thumb opening/extension against resistance."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   },
   {
     id: "thumb_radial_abduction_with_rubber_band_palm_down",
     label: "Thumb Radial Abduction with Rubber Band - Palm Down",
     description: "Tracks thumb radial abduction against elastic resistance."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   },
   {
     id: "putty_squeezes",
     label: "Putty Squeezes",
     description: "Measures global grip closure completeness and return control."
     ,
-    group: "Strengthening HEP.pdf"
+    group: "Strengthening"
   }
 ];
 
